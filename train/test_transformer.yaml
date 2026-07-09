@@ -59,7 +59,7 @@ agent:
 environment:
   mission_possibility: [0.5, 0.5]
   poisson_rate: 30
-  packet_frequency: 0.6
+  packet_frequency: 0.5
   computing_demand_factor: [150, 250]
   computing_demand_factor_2: [300, 500]
   size_after_computing_factor: [0.08, 0.125]
