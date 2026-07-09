@@ -1,0 +1,36 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "plot_training_results.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/plot_multiple_metrics.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "PRC.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/PRC.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "PRC_GNN_TRANSFORMER.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/PRC_GNN_TRANSFORMER.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "PRC_GNN.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/PRC_GNN.py",
+            "console": "integratedTerminal"
+        }
+    ]
+}

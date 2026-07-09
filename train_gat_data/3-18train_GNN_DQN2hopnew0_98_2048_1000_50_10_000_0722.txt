@@ -1,0 +1,900 @@
+====== step 10 ======
+====== 2023-10-01 00:00:09 ======
+current_statics: {'Total': 246, 'Reached_0': 35, 'Reached_1': 44, 'Reached_after_computed_0': 26, 'Reached_after_computed_1': 31, 'Lost_upload': 0, 'Lost_relay_0': 15, 'Lost_relay_1': 16, 'Total_delay_0': np.float64(72.19082536091291), 'Total_delay_1': np.float64(124.38166158648573), 'Total_hops_0': 297, 'Total_hops_1': 344, 'Is_computing': 330, 'Computing_waiting_time': np.float64(132.3356869047694)}
+Packet loss rate: 28.18%
+Average delay for successful transmissions: 2.488 seconds
+Average hop count for successful transmissions: 8.114 hops
+Proportion of satellites in computation: 11.46%
+Average waiting time for computing: 1.675 seconds
+Average ending reward: 0.12038613718685712
+====== step 20 ======
+====== 2023-10-01 00:00:19 ======
+current_statics: {'Total': 687, 'Reached_0': 147, 'Reached_1': 199, 'Reached_after_computed_0': 111, 'Reached_after_computed_1': 126, 'Lost_upload': 0, 'Lost_relay_0': 99, 'Lost_relay_1': 99, 'Total_delay_0': np.float64(431.13435233562956), 'Total_delay_1': np.float64(716.5901480726397), 'Total_hops_0': 1545, 'Total_hops_1': 1661, 'Is_computing': 941, 'Computing_waiting_time': np.float64(728.2445884369577)}
+Packet loss rate: 36.40%
+Average delay for successful transmissions: 3.317 seconds
+Average hop count for successful transmissions: 9.266 hops
+Proportion of satellites in computation: 32.67%
+Average waiting time for computing: 2.105 seconds
+Average ending reward: -0.08016235813643803
+====== step 30 ======
+====== 2023-10-01 00:00:29 ======
+current_statics: {'Total': 824, 'Reached_0': 224, 'Reached_1': 287, 'Reached_after_computed_0': 157, 'Reached_after_computed_1': 164, 'Lost_upload': 0, 'Lost_relay_0': 142, 'Lost_relay_1': 150, 'Total_delay_0': np.float64(841.2352472372287), 'Total_delay_1': np.float64(1245.086435854856), 'Total_hops_0': 2335, 'Total_hops_1': 2713, 'Is_computing': 1251, 'Computing_waiting_time': np.float64(1042.3737624733844)}
+Packet loss rate: 36.36%
+Average delay for successful transmissions: 4.083 seconds
+Average hop count for successful transmissions: 9.879 hops
+Proportion of satellites in computation: 43.44%
+Average waiting time for computing: 2.040 seconds
+Average ending reward: -0.1380326934673372
+====== step 40 ======
+====== 2023-10-01 00:00:39 ======
+current_statics: {'Total': 949, 'Reached_0': 366, 'Reached_1': 360, 'Reached_after_computed_0': 285, 'Reached_after_computed_1': 267, 'Lost_upload': 0, 'Lost_relay_0': 96, 'Lost_relay_1': 85, 'Total_delay_0': np.float64(1130.3929237504526), 'Total_delay_1': np.float64(1607.1149766270578), 'Total_hops_0': 3521, 'Total_hops_1': 3064, 'Is_computing': 1542, 'Computing_waiting_time': np.float64(1908.66706382362)}
+Packet loss rate: 19.96%
+Average delay for successful transmissions: 3.771 seconds
+Average hop count for successful transmissions: 9.070 hops
+Proportion of satellites in computation: 53.54%
+Average waiting time for computing: 2.629 seconds
+Average ending reward: 0.24021587828075705
+====== step 50 ======
+====== 2023-10-01 00:00:49 ======
+current_statics: {'Total': 938, 'Reached_0': 412, 'Reached_1': 382, 'Reached_after_computed_0': 355, 'Reached_after_computed_1': 330, 'Lost_upload': 0, 'Lost_relay_0': 87, 'Lost_relay_1': 51, 'Total_delay_0': np.float64(1295.6912140473696), 'Total_delay_1': np.float64(1895.4416277182863), 'Total_hops_0': 2963, 'Total_hops_1': 2643, 'Is_computing': 1703, 'Computing_waiting_time': np.float64(2603.9483185818654)}
+Packet loss rate: 14.81%
+Average delay for successful transmissions: 4.019 seconds
+Average hop count for successful transmissions: 7.060 hops
+Proportion of satellites in computation: 59.13%
+Average waiting time for computing: 3.280 seconds
+Average ending reward: 0.41032482281872823
+====== step 60 ======
+====== 2023-10-01 00:00:59 ======
+current_statics: {'Total': 894, 'Reached_0': 424, 'Reached_1': 351, 'Reached_after_computed_0': 408, 'Reached_after_computed_1': 322, 'Lost_upload': 0, 'Lost_relay_0': 48, 'Lost_relay_1': 34, 'Total_delay_0': np.float64(1521.7175298742422), 'Total_delay_1': np.float64(1830.2433529627815), 'Total_hops_0': 3087, 'Total_hops_1': 2343, 'Is_computing': 1738, 'Computing_waiting_time': np.float64(2823.9062411645473)}
+Packet loss rate: 9.57%
+Average delay for successful transmissions: 4.325 seconds
+Average hop count for successful transmissions: 7.006 hops
+Proportion of satellites in computation: 60.35%
+Average waiting time for computing: 3.644 seconds
+Average ending reward: 0.5595782217739178
+====== step 70 ======
+====== 2023-10-01 00:01:09 ======
+current_statics: {'Total': 931, 'Reached_0': 438, 'Reached_1': 344, 'Reached_after_computed_0': 431, 'Reached_after_computed_1': 309, 'Lost_upload': 0, 'Lost_relay_0': 20, 'Lost_relay_1': 17, 'Total_delay_0': np.float64(1827.3295011202908), 'Total_delay_1': np.float64(1901.1261228506328), 'Total_hops_0': 3210, 'Total_hops_1': 2261, 'Is_computing': 1714, 'Computing_waiting_time': np.float64(3083.1030734886263)}
+Packet loss rate: 4.52%
+Average delay for successful transmissions: 4.768 seconds
+Average hop count for successful transmissions: 6.996 hops
+Proportion of satellites in computation: 59.51%
+Average waiting time for computing: 3.943 seconds
+Average ending reward: 0.6286540983569727
+====== step 80 ======
+====== 2023-10-01 00:01:19 ======
+current_statics: {'Total': 1024, 'Reached_0': 448, 'Reached_1': 414, 'Reached_after_computed_0': 436, 'Reached_after_computed_1': 351, 'Lost_upload': 0, 'Lost_relay_0': 16, 'Lost_relay_1': 17, 'Total_delay_0': np.float64(2120.2489875239125), 'Total_delay_1': np.float64(2640.2903245664183), 'Total_hops_0': 3433, 'Total_hops_1': 2890, 'Is_computing': 2042, 'Computing_waiting_time': np.float64(3857.8189224001762)}
+Packet loss rate: 3.69%
+Average delay for successful transmissions: 5.523 seconds
+Average hop count for successful transmissions: 7.335 hops
+Proportion of satellites in computation: 70.90%
+Average waiting time for computing: 4.475 seconds
+Average ending reward: 0.5795849543790884
+====== step 90 ======
+====== 2023-10-01 00:01:29 ======
+current_statics: {'Total': 1018, 'Reached_0': 446, 'Reached_1': 505, 'Reached_after_computed_0': 440, 'Reached_after_computed_1': 399, 'Lost_upload': 0, 'Lost_relay_0': 8, 'Lost_relay_1': 8, 'Total_delay_0': np.float64(2797.939911826621), 'Total_delay_1': np.float64(3541.133377363658), 'Total_hops_0': 4171, 'Total_hops_1': 4878, 'Is_computing': 2188, 'Computing_waiting_time': np.float64(4461.100187683793)}
+Packet loss rate: 1.65%
+Average delay for successful transmissions: 6.666 seconds
+Average hop count for successful transmissions: 9.515 hops
+Proportion of satellites in computation: 75.97%
+Average waiting time for computing: 4.691 seconds
+Average ending reward: 0.5193971740094379
+====== step 100 ======
+====== 2023-10-01 00:01:39 ======
+current_statics: {'Total': 1112, 'Reached_0': 569, 'Reached_1': 547, 'Reached_after_computed_0': 559, 'Reached_after_computed_1': 488, 'Lost_upload': 0, 'Lost_relay_0': 13, 'Lost_relay_1': 11, 'Total_delay_0': np.float64(3314.5860627911297), 'Total_delay_1': np.float64(3970.430607202963), 'Total_hops_0': 5215, 'Total_hops_1': 5789, 'Is_computing': 2340, 'Computing_waiting_time': np.float64(5302.049025746986)}
+Packet loss rate: 2.11%
+Average delay for successful transmissions: 6.528 seconds
+Average hop count for successful transmissions: 9.860 hops
+Proportion of satellites in computation: 81.25%
+Average waiting time for computing: 4.751 seconds
+Average ending reward: 0.5833926623168195
+====== step 110 ======
+====== 2023-10-01 00:01:49 ======
+current_statics: {'Total': 1104, 'Reached_0': 552, 'Reached_1': 497, 'Reached_after_computed_0': 548, 'Reached_after_computed_1': 476, 'Lost_upload': 0, 'Lost_relay_0': 13, 'Lost_relay_1': 11, 'Total_delay_0': np.float64(2691.425363055101), 'Total_delay_1': np.float64(3533.946144929272), 'Total_hops_0': 4703, 'Total_hops_1': 4618, 'Is_computing': 2450, 'Computing_waiting_time': np.float64(4838.726016907978)}
+Packet loss rate: 2.24%
+Average delay for successful transmissions: 5.935 seconds
+Average hop count for successful transmissions: 8.886 hops
+Proportion of satellites in computation: 85.07%
+Average waiting time for computing: 4.613 seconds
+Average ending reward: 0.6462812234876893
+====== step 120 ======
+====== 2023-10-01 00:01:59 ======
+current_statics: {'Total': 1157, 'Reached_0': 597, 'Reached_1': 544, 'Reached_after_computed_0': 588, 'Reached_after_computed_1': 514, 'Lost_upload': 0, 'Lost_relay_0': 9, 'Lost_relay_1': 10, 'Total_delay_0': np.float64(2852.8880464141585), 'Total_delay_1': np.float64(4091.0032978112504), 'Total_hops_0': 4996, 'Total_hops_1': 5333, 'Is_computing': 2587, 'Computing_waiting_time': np.float64(5208.319970335415)}
+Packet loss rate: 1.64%
+Average delay for successful transmissions: 6.086 seconds
+Average hop count for successful transmissions: 9.053 hops
+Proportion of satellites in computation: 89.83%
+Average waiting time for computing: 4.565 seconds
+Average ending reward: 0.6421100435997543
+====== step 130 ======
+====== 2023-10-01 00:02:09 ======
+current_statics: {'Total': 1084, 'Reached_0': 557, 'Reached_1': 537, 'Reached_after_computed_0': 555, 'Reached_after_computed_1': 533, 'Lost_upload': 0, 'Lost_relay_0': 5, 'Lost_relay_1': 5, 'Total_delay_0': np.float64(2745.7577192820863), 'Total_delay_1': np.float64(4137.598182384005), 'Total_hops_0': 4892, 'Total_hops_1': 5682, 'Is_computing': 2632, 'Computing_waiting_time': np.float64(5513.162384785894)}
+Packet loss rate: 0.91%
+Average delay for successful transmissions: 6.292 seconds
+Average hop count for successful transmissions: 9.665 hops
+Proportion of satellites in computation: 91.39%
+Average waiting time for computing: 5.039 seconds
+Average ending reward: 0.6638482519994251
+====== step 140 ======
+====== 2023-10-01 00:02:19 ======
+current_statics: {'Total': 1018, 'Reached_0': 597, 'Reached_1': 512, 'Reached_after_computed_0': 594, 'Reached_after_computed_1': 512, 'Lost_upload': 0, 'Lost_relay_0': 7, 'Lost_relay_1': 9, 'Total_delay_0': np.float64(3022.4320963782993), 'Total_delay_1': np.float64(3719.977461066057), 'Total_hops_0': 5006, 'Total_hops_1': 4983, 'Is_computing': 2555, 'Computing_waiting_time': np.float64(5578.202901271201)}
+Packet loss rate: 1.42%
+Average delay for successful transmissions: 6.080 seconds
+Average hop count for successful transmissions: 9.007 hops
+Proportion of satellites in computation: 88.72%
+Average waiting time for computing: 5.030 seconds
+Average ending reward: 0.682770059826549
+====== step 150 ======
+====== 2023-10-01 00:02:29 ======
+current_statics: {'Total': 972, 'Reached_0': 548, 'Reached_1': 474, 'Reached_after_computed_0': 548, 'Reached_after_computed_1': 472, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 3, 'Total_delay_0': np.float64(2467.504865722425), 'Total_delay_1': np.float64(2931.1372598398666), 'Total_hops_0': 4729, 'Total_hops_1': 4573, 'Is_computing': 2429, 'Computing_waiting_time': np.float64(4446.987585855626)}
+Packet loss rate: 0.49%
+Average delay for successful transmissions: 5.282 seconds
+Average hop count for successful transmissions: 9.102 hops
+Proportion of satellites in computation: 84.34%
+Average waiting time for computing: 4.351 seconds
+Average ending reward: 0.732015588233249
+====== step 160 ======
+====== 2023-10-01 00:02:39 ======
+current_statics: {'Total': 1081, 'Reached_0': 544, 'Reached_1': 493, 'Reached_after_computed_0': 544, 'Reached_after_computed_1': 492, 'Lost_upload': 0, 'Lost_relay_0': 7, 'Lost_relay_1': 7, 'Total_delay_0': np.float64(2115.365243790049), 'Total_delay_1': np.float64(2801.281924846924), 'Total_hops_0': 5119, 'Total_hops_1': 4651, 'Is_computing': 2464, 'Computing_waiting_time': np.float64(4022.4063703094507)}
+Packet loss rate: 1.33%
+Average delay for successful transmissions: 4.741 seconds
+Average hop count for successful transmissions: 9.421 hops
+Proportion of satellites in computation: 85.56%
+Average waiting time for computing: 3.879 seconds
+Average ending reward: 0.7512520772669411
+====== step 170 ======
+====== 2023-10-01 00:02:49 ======
+current_statics: {'Total': 1023, 'Reached_0': 508, 'Reached_1': 519, 'Reached_after_computed_0': 508, 'Reached_after_computed_1': 518, 'Lost_upload': 0, 'Lost_relay_0': 10, 'Lost_relay_1': 7, 'Total_delay_0': np.float64(2075.53729206368), 'Total_delay_1': np.float64(3100.748697090785), 'Total_hops_0': 4584, 'Total_hops_1': 5060, 'Is_computing': 2472, 'Computing_waiting_time': np.float64(4410.321638629568)}
+Packet loss rate: 1.63%
+Average delay for successful transmissions: 5.040 seconds
+Average hop count for successful transmissions: 9.390 hops
+Proportion of satellites in computation: 85.83%
+Average waiting time for computing: 4.294 seconds
+Average ending reward: 0.7378387353753206
+====== step 180 ======
+====== 2023-10-01 00:02:59 ======
+current_statics: {'Total': 1040, 'Reached_0': 528, 'Reached_1': 482, 'Reached_after_computed_0': 528, 'Reached_after_computed_1': 482, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 2, 'Total_delay_0': np.float64(2167.460413435969), 'Total_delay_1': np.float64(2855.975820462132), 'Total_hops_0': 4650, 'Total_hops_1': 4605, 'Is_computing': 2476, 'Computing_waiting_time': np.float64(4343.6861746914)}
+Packet loss rate: 0.30%
+Average delay for successful transmissions: 4.974 seconds
+Average hop count for successful transmissions: 9.163 hops
+Proportion of satellites in computation: 85.97%
+Average waiting time for computing: 4.301 seconds
+Average ending reward: 0.7475058006089784
+====== step 190 ======
+====== 2023-10-01 00:03:09 ======
+current_statics: {'Total': 1032, 'Reached_0': 472, 'Reached_1': 562, 'Reached_after_computed_0': 471, 'Reached_after_computed_1': 561, 'Lost_upload': 0, 'Lost_relay_0': 4, 'Lost_relay_1': 3, 'Total_delay_0': np.float64(1979.028030339985), 'Total_delay_1': np.float64(3311.462130142798), 'Total_hops_0': 4033, 'Total_hops_1': 5122, 'Is_computing': 2548, 'Computing_waiting_time': np.float64(4630.310479316591)}
+Packet loss rate: 0.67%
+Average delay for successful transmissions: 5.117 seconds
+Average hop count for successful transmissions: 8.854 hops
+Proportion of satellites in computation: 88.47%
+Average waiting time for computing: 4.478 seconds
+Average ending reward: 0.7405560308945026
+====== step 200 ======
+====== 2023-10-01 00:03:19 ======
+current_statics: {'Total': 1043, 'Reached_0': 500, 'Reached_1': 549, 'Reached_after_computed_0': 500, 'Reached_after_computed_1': 549, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 7, 'Total_delay_0': np.float64(2101.023801784082), 'Total_delay_1': np.float64(3239.0703415595635), 'Total_hops_0': 4142, 'Total_hops_1': 5022, 'Is_computing': 2586, 'Computing_waiting_time': np.float64(4691.708071713365)}
+Packet loss rate: 0.76%
+Average delay for successful transmissions: 5.091 seconds
+Average hop count for successful transmissions: 8.736 hops
+Proportion of satellites in computation: 89.79%
+Average waiting time for computing: 4.473 seconds
+Average ending reward: 0.7400244338624659
+====== step 210 ======
+====== 2023-10-01 00:03:29 ======
+current_statics: {'Total': 1022, 'Reached_0': 537, 'Reached_1': 533, 'Reached_after_computed_0': 537, 'Reached_after_computed_1': 533, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 4, 'Total_delay_0': np.float64(2060.8841634826385), 'Total_delay_1': np.float64(2972.2692033734347), 'Total_hops_0': 4293, 'Total_hops_1': 4858, 'Is_computing': 2531, 'Computing_waiting_time': np.float64(4416.149530770068)}
+Packet loss rate: 0.56%
+Average delay for successful transmissions: 4.704 seconds
+Average hop count for successful transmissions: 8.552 hops
+Proportion of satellites in computation: 87.88%
+Average waiting time for computing: 4.127 seconds
+Average ending reward: 0.7648059174366333
+====== step 220 ======
+====== 2023-10-01 00:03:39 ======
+current_statics: {'Total': 1078, 'Reached_0': 544, 'Reached_1': 520, 'Reached_after_computed_0': 544, 'Reached_after_computed_1': 520, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 2, 'Total_delay_0': np.float64(1954.722365516136), 'Total_delay_1': np.float64(2701.6114245896315), 'Total_hops_0': 4212, 'Total_hops_1': 4560, 'Is_computing': 2544, 'Computing_waiting_time': np.float64(4109.754807032412)}
+Packet loss rate: 0.28%
+Average delay for successful transmissions: 4.376 seconds
+Average hop count for successful transmissions: 8.244 hops
+Proportion of satellites in computation: 88.33%
+Average waiting time for computing: 3.863 seconds
+Average ending reward: 0.779269849645778
+====== step 230 ======
+====== 2023-10-01 00:03:49 ======
+current_statics: {'Total': 1037, 'Reached_0': 546, 'Reached_1': 494, 'Reached_after_computed_0': 546, 'Reached_after_computed_1': 489, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 6, 'Total_delay_0': np.float64(1990.0642284054557), 'Total_delay_1': np.float64(2571.6995897458546), 'Total_hops_0': 4077, 'Total_hops_1': 4170, 'Is_computing': 2491, 'Computing_waiting_time': np.float64(4042.3856001953973)}
+Packet loss rate: 0.76%
+Average delay for successful transmissions: 4.386 seconds
+Average hop count for successful transmissions: 7.930 hops
+Proportion of satellites in computation: 86.49%
+Average waiting time for computing: 3.887 seconds
+Average ending reward: 0.7740050722096087
+====== step 240 ======
+====== 2023-10-01 00:03:59 ======
+current_statics: {'Total': 1030, 'Reached_0': 464, 'Reached_1': 551, 'Reached_after_computed_0': 464, 'Reached_after_computed_1': 550, 'Lost_upload': 0, 'Lost_relay_0': 7, 'Lost_relay_1': 5, 'Total_delay_0': np.float64(1671.558976145825), 'Total_delay_1': np.float64(2889.65733783396), 'Total_hops_0': 3635, 'Total_hops_1': 4553, 'Is_computing': 2544, 'Computing_waiting_time': np.float64(4018.4629208881524)}
+Packet loss rate: 1.17%
+Average delay for successful transmissions: 4.494 seconds
+Average hop count for successful transmissions: 8.067 hops
+Proportion of satellites in computation: 88.33%
+Average waiting time for computing: 3.959 seconds
+Average ending reward: 0.7669253240599269
+====== step 250 ======
+====== 2023-10-01 00:04:09 ======
+current_statics: {'Total': 1048, 'Reached_0': 440, 'Reached_1': 590, 'Reached_after_computed_0': 440, 'Reached_after_computed_1': 590, 'Lost_upload': 0, 'Lost_relay_0': 4, 'Lost_relay_1': 6, 'Total_delay_0': np.float64(1580.4940150335315), 'Total_delay_1': np.float64(3068.4300475865166), 'Total_hops_0': 3550, 'Total_hops_1': 5128, 'Is_computing': 2559, 'Computing_waiting_time': np.float64(4145.833635327319)}
+Packet loss rate: 0.96%
+Average delay for successful transmissions: 4.514 seconds
+Average hop count for successful transmissions: 8.425 hops
+Proportion of satellites in computation: 88.85%
+Average waiting time for computing: 4.025 seconds
+Average ending reward: 0.7703092671206355
+====== step 260 ======
+====== 2023-10-01 00:04:19 ======
+current_statics: {'Total': 1040, 'Reached_0': 449, 'Reached_1': 550, 'Reached_after_computed_0': 449, 'Reached_after_computed_1': 550, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 8, 'Total_delay_0': np.float64(1661.3955118795202), 'Total_delay_1': np.float64(2948.7117622304504), 'Total_hops_0': 3902, 'Total_hops_1': 5209, 'Is_computing': 2589, 'Computing_waiting_time': np.float64(4052.651556606972)}
+Packet loss rate: 0.99%
+Average delay for successful transmissions: 4.615 seconds
+Average hop count for successful transmissions: 9.120 hops
+Proportion of satellites in computation: 89.90%
+Average waiting time for computing: 4.057 seconds
+Average ending reward: 0.7692639001946908
+====== step 270 ======
+====== 2023-10-01 00:04:29 ======
+current_statics: {'Total': 1050, 'Reached_0': 420, 'Reached_1': 606, 'Reached_after_computed_0': 420, 'Reached_after_computed_1': 606, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 3, 'Total_delay_0': np.float64(1607.933829490692), 'Total_delay_1': np.float64(3380.1226063988142), 'Total_hops_0': 3770, 'Total_hops_1': 5784, 'Is_computing': 2637, 'Computing_waiting_time': np.float64(4335.48502905661)}
+Packet loss rate: 0.29%
+Average delay for successful transmissions: 4.862 seconds
+Average hop count for successful transmissions: 9.312 hops
+Proportion of satellites in computation: 91.56%
+Average waiting time for computing: 4.226 seconds
+Average ending reward: 0.7569173276856987
+====== step 280 ======
+====== 2023-10-01 00:04:39 ======
+current_statics: {'Total': 1032, 'Reached_0': 439, 'Reached_1': 617, 'Reached_after_computed_0': 439, 'Reached_after_computed_1': 617, 'Lost_upload': 0, 'Lost_relay_0': 7, 'Lost_relay_1': 5, 'Total_delay_0': np.float64(1627.9438062929112), 'Total_delay_1': np.float64(3449.447195060391), 'Total_hops_0': 3882, 'Total_hops_1': 5645, 'Is_computing': 2628, 'Computing_waiting_time': np.float64(4455.126487175512)}
+Packet loss rate: 1.12%
+Average delay for successful transmissions: 4.808 seconds
+Average hop count for successful transmissions: 9.022 hops
+Proportion of satellites in computation: 91.25%
+Average waiting time for computing: 4.219 seconds
+Average ending reward: 0.7561036448640269
+====== step 290 ======
+====== 2023-10-01 00:04:49 ======
+current_statics: {'Total': 1014, 'Reached_0': 483, 'Reached_1': 542, 'Reached_after_computed_0': 483, 'Reached_after_computed_1': 542, 'Lost_upload': 0, 'Lost_relay_0': 3, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1736.797461045011), 'Total_delay_1': np.float64(3095.9760724675143), 'Total_hops_0': 4227, 'Total_hops_1': 5229, 'Is_computing': 2517, 'Computing_waiting_time': np.float64(4184.755293930226)}
+Packet loss rate: 0.29%
+Average delay for successful transmissions: 4.715 seconds
+Average hop count for successful transmissions: 9.225 hops
+Proportion of satellites in computation: 87.40%
+Average waiting time for computing: 4.083 seconds
+Average ending reward: 0.7625354028502154
+====== step 300 ======
+====== 2023-10-01 00:04:59 ======
+current_statics: {'Total': 1002, 'Reached_0': 514, 'Reached_1': 508, 'Reached_after_computed_0': 514, 'Reached_after_computed_1': 508, 'Lost_upload': 0, 'Lost_relay_0': 5, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1777.253160995897), 'Total_delay_1': np.float64(2877.5339131847722), 'Total_hops_0': 4165, 'Total_hops_1': 4616, 'Is_computing': 2440, 'Computing_waiting_time': np.float64(4031.1991403853317)}
+Packet loss rate: 0.58%
+Average delay for successful transmissions: 4.555 seconds
+Average hop count for successful transmissions: 8.592 hops
+Proportion of satellites in computation: 84.72%
+Average waiting time for computing: 3.944 seconds
+Average ending reward: 0.7722706910870465
+====== step 310 ======
+====== 2023-10-01 00:05:09 ======
+current_statics: {'Total': 971, 'Reached_0': 510, 'Reached_1': 499, 'Reached_after_computed_0': 509, 'Reached_after_computed_1': 499, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 2, 'Total_delay_0': np.float64(1681.3439217564446), 'Total_delay_1': np.float64(2700.2908968002157), 'Total_hops_0': 4204, 'Total_hops_1': 4510, 'Is_computing': 2398, 'Computing_waiting_time': np.float64(3827.7244212256774)}
+Packet loss rate: 0.30%
+Average delay for successful transmissions: 4.343 seconds
+Average hop count for successful transmissions: 8.636 hops
+Proportion of satellites in computation: 83.26%
+Average waiting time for computing: 3.794 seconds
+Average ending reward: 0.7818813271280214
+====== step 320 ======
+====== 2023-10-01 00:05:19 ======
+current_statics: {'Total': 1016, 'Reached_0': 543, 'Reached_1': 491, 'Reached_after_computed_0': 543, 'Reached_after_computed_1': 491, 'Lost_upload': 0, 'Lost_relay_0': 4, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1686.8026539430357), 'Total_delay_1': np.float64(2328.436906823772), 'Total_hops_0': 4338, 'Total_hops_1': 4548, 'Is_computing': 2439, 'Computing_waiting_time': np.float64(3537.3184073467564)}
+Packet loss rate: 0.39%
+Average delay for successful transmissions: 3.883 seconds
+Average hop count for successful transmissions: 8.594 hops
+Proportion of satellites in computation: 84.69%
+Average waiting time for computing: 3.421 seconds
+Average ending reward: 0.8058394796534403
+====== step 330 ======
+====== 2023-10-01 00:05:29 ======
+current_statics: {'Total': 1025, 'Reached_0': 522, 'Reached_1': 496, 'Reached_after_computed_0': 522, 'Reached_after_computed_1': 496, 'Lost_upload': 0, 'Lost_relay_0': 3, 'Lost_relay_1': 6, 'Total_delay_0': np.float64(1512.4160594518835), 'Total_delay_1': np.float64(2240.3007506180584), 'Total_hops_0': 4181, 'Total_hops_1': 4650, 'Is_computing': 2450, 'Computing_waiting_time': np.float64(3309.442235714756)}
+Packet loss rate: 0.88%
+Average delay for successful transmissions: 3.686 seconds
+Average hop count for successful transmissions: 8.675 hops
+Proportion of satellites in computation: 85.07%
+Average waiting time for computing: 3.251 seconds
+Average ending reward: 0.8156818855564868
+====== step 340 ======
+====== 2023-10-01 00:05:39 ======
+current_statics: {'Total': 1017, 'Reached_0': 563, 'Reached_1': 484, 'Reached_after_computed_0': 563, 'Reached_after_computed_1': 484, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1550.9654337011161), 'Total_delay_1': np.float64(2137.7820818762557), 'Total_hops_0': 4549, 'Total_hops_1': 4033, 'Is_computing': 2374, 'Computing_waiting_time': np.float64(3244.38674135154)}
+Packet loss rate: 0.29%
+Average delay for successful transmissions: 3.523 seconds
+Average hop count for successful transmissions: 8.197 hops
+Proportion of satellites in computation: 82.43%
+Average waiting time for computing: 3.099 seconds
+Average ending reward: 0.8238420479667019
+====== step 350 ======
+====== 2023-10-01 00:05:49 ======
+current_statics: {'Total': 1032, 'Reached_0': 557, 'Reached_1': 473, 'Reached_after_computed_0': 557, 'Reached_after_computed_1': 473, 'Lost_upload': 0, 'Lost_relay_0': 3, 'Lost_relay_1': 3, 'Total_delay_0': np.float64(1526.5668272149196), 'Total_delay_1': np.float64(2043.4630838113808), 'Total_hops_0': 4803, 'Total_hops_1': 3997, 'Is_computing': 2375, 'Computing_waiting_time': np.float64(3117.043234354176)}
+Packet loss rate: 0.58%
+Average delay for successful transmissions: 3.466 seconds
+Average hop count for successful transmissions: 8.544 hops
+Proportion of satellites in computation: 82.47%
+Average waiting time for computing: 3.026 seconds
+Average ending reward: 0.8266975771346362
+====== step 360 ======
+====== 2023-10-01 00:05:59 ======
+current_statics: {'Total': 1046, 'Reached_0': 564, 'Reached_1': 480, 'Reached_after_computed_0': 564, 'Reached_after_computed_1': 480, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 4, 'Total_delay_0': np.float64(1519.3273281777874), 'Total_delay_1': np.float64(1963.5830104737252), 'Total_hops_0': 4742, 'Total_hops_1': 4366, 'Is_computing': 2411, 'Computing_waiting_time': np.float64(3026.7303505385644)}
+Packet loss rate: 0.57%
+Average delay for successful transmissions: 3.336 seconds
+Average hop count for successful transmissions: 8.724 hops
+Proportion of satellites in computation: 83.72%
+Average waiting time for computing: 2.899 seconds
+Average ending reward: 0.8331939492982967
+====== step 370 ======
+====== 2023-10-01 00:06:09 ======
+current_statics: {'Total': 1007, 'Reached_0': 493, 'Reached_1': 497, 'Reached_after_computed_0': 493, 'Reached_after_computed_1': 497, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 2, 'Total_delay_0': np.float64(1362.5057484414865), 'Total_delay_1': np.float64(2030.3342375607754), 'Total_hops_0': 4025, 'Total_hops_1': 4694, 'Is_computing': 2373, 'Computing_waiting_time': np.float64(2935.866080891894)}
+Packet loss rate: 0.20%
+Average delay for successful transmissions: 3.427 seconds
+Average hop count for successful transmissions: 8.807 hops
+Proportion of satellites in computation: 82.40%
+Average waiting time for computing: 2.966 seconds
+Average ending reward: 0.8286444451513952
+====== step 380 ======
+====== 2023-10-01 00:06:19 ======
+current_statics: {'Total': 1032, 'Reached_0': 488, 'Reached_1': 488, 'Reached_after_computed_0': 488, 'Reached_after_computed_1': 488, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 9, 'Total_delay_0': np.float64(1419.284886914058), 'Total_delay_1': np.float64(2088.2919895052473), 'Total_hops_0': 4204, 'Total_hops_1': 4925, 'Is_computing': 2397, 'Computing_waiting_time': np.float64(3107.3285684682196)}
+Packet loss rate: 1.01%
+Average delay for successful transmissions: 3.594 seconds
+Average hop count for successful transmissions: 9.353 hops
+Proportion of satellites in computation: 83.23%
+Average waiting time for computing: 3.184 seconds
+Average ending reward: 0.8203085616588546
+====== step 390 ======
+====== 2023-10-01 00:06:29 ======
+current_statics: {'Total': 1030, 'Reached_0': 543, 'Reached_1': 508, 'Reached_after_computed_0': 543, 'Reached_after_computed_1': 508, 'Lost_upload': 0, 'Lost_relay_0': 4, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1675.089643307976), 'Total_delay_1': np.float64(2223.134993348096), 'Total_hops_0': 4726, 'Total_hops_1': 4922, 'Is_computing': 2433, 'Computing_waiting_time': np.float64(3419.734376990731)}
+Packet loss rate: 0.38%
+Average delay for successful transmissions: 3.709 seconds
+Average hop count for successful transmissions: 9.180 hops
+Proportion of satellites in computation: 84.48%
+Average waiting time for computing: 3.254 seconds
+Average ending reward: 0.8145468774188293
+====== step 400 ======
+====== 2023-10-01 00:06:39 ======
+current_statics: {'Total': 1016, 'Reached_0': 480, 'Reached_1': 517, 'Reached_after_computed_0': 480, 'Reached_after_computed_1': 517, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 4, 'Total_delay_0': np.float64(1464.1961894247943), 'Total_delay_1': np.float64(2334.066399167714), 'Total_hops_0': 4230, 'Total_hops_1': 4910, 'Is_computing': 2440, 'Computing_waiting_time': np.float64(3317.101461030252)}
+Packet loss rate: 0.50%
+Average delay for successful transmissions: 3.810 seconds
+Average hop count for successful transmissions: 9.168 hops
+Proportion of satellites in computation: 84.72%
+Average waiting time for computing: 3.327 seconds
+Average ending reward: 0.809515416820823
+====== step 410 ======
+====== 2023-10-01 00:06:49 ======
+current_statics: {'Total': 1060, 'Reached_0': 440, 'Reached_1': 573, 'Reached_after_computed_0': 440, 'Reached_after_computed_1': 573, 'Lost_upload': 0, 'Lost_relay_0': 7, 'Lost_relay_1': 4, 'Total_delay_0': np.float64(1353.701856270578), 'Total_delay_1': np.float64(2635.241932395016), 'Total_hops_0': 3915, 'Total_hops_1': 5779, 'Is_computing': 2577, 'Computing_waiting_time': np.float64(3519.6526807997143)}
+Packet loss rate: 1.07%
+Average delay for successful transmissions: 3.938 seconds
+Average hop count for successful transmissions: 9.570 hops
+Proportion of satellites in computation: 89.48%
+Average waiting time for computing: 3.474 seconds
+Average ending reward: 0.8031123500164984
+====== step 420 ======
+====== 2023-10-01 00:06:59 ======
+current_statics: {'Total': 1061, 'Reached_0': 409, 'Reached_1': 592, 'Reached_after_computed_0': 409, 'Reached_after_computed_1': 592, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 4, 'Total_delay_0': np.float64(1337.9801326322631), 'Total_delay_1': np.float64(2953.4702881148114), 'Total_hops_0': 3945, 'Total_hops_1': 6386, 'Is_computing': 2642, 'Computing_waiting_time': np.float64(3642.32997415468)}
+Packet loss rate: 0.60%
+Average delay for successful transmissions: 4.287 seconds
+Average hop count for successful transmissions: 10.321 hops
+Proportion of satellites in computation: 91.74%
+Average waiting time for computing: 3.639 seconds
+Average ending reward: 0.7856418371255398
+====== step 430 ======
+====== 2023-10-01 00:07:09 ======
+current_statics: {'Total': 1044, 'Reached_0': 448, 'Reached_1': 594, 'Reached_after_computed_0': 448, 'Reached_after_computed_1': 594, 'Lost_upload': 0, 'Lost_relay_0': 7, 'Lost_relay_1': 8, 'Total_delay_0': np.float64(1569.6906024054188), 'Total_delay_1': np.float64(3048.8204899511184), 'Total_hops_0': 4228, 'Total_hops_1': 6702, 'Is_computing': 2645, 'Computing_waiting_time': np.float64(3828.721972302592)}
+Packet loss rate: 1.42%
+Average delay for successful transmissions: 4.432 seconds
+Average hop count for successful transmissions: 10.489 hops
+Proportion of satellites in computation: 91.84%
+Average waiting time for computing: 3.674 seconds
+Average ending reward: 0.7783823852036328
+====== step 440 ======
+====== 2023-10-01 00:07:19 ======
+current_statics: {'Total': 1051, 'Reached_0': 474, 'Reached_1': 591, 'Reached_after_computed_0': 474, 'Reached_after_computed_1': 591, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 4, 'Total_delay_0': np.float64(1706.0699480511248), 'Total_delay_1': np.float64(3047.7310593293514), 'Total_hops_0': 4491, 'Total_hops_1': 6332, 'Is_computing': 2719, 'Computing_waiting_time': np.float64(3926.1690053832135)}
+Packet loss rate: 0.56%
+Average delay for successful transmissions: 4.464 seconds
+Average hop count for successful transmissions: 10.162 hops
+Proportion of satellites in computation: 94.41%
+Average waiting time for computing: 3.687 seconds
+Average ending reward: 0.7768168541135979
+====== step 450 ======
+====== 2023-10-01 00:07:29 ======
+current_statics: {'Total': 1075, 'Reached_0': 505, 'Reached_1': 553, 'Reached_after_computed_0': 505, 'Reached_after_computed_1': 553, 'Lost_upload': 0, 'Lost_relay_0': 3, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1704.149823240441), 'Total_delay_1': np.float64(2739.216974740397), 'Total_hops_0': 4787, 'Total_hops_1': 6069, 'Is_computing': 2603, 'Computing_waiting_time': np.float64(3759.1391399178538)}
+Packet loss rate: 0.38%
+Average delay for successful transmissions: 4.200 seconds
+Average hop count for successful transmissions: 10.261 hops
+Proportion of satellites in computation: 90.38%
+Average waiting time for computing: 3.553 seconds
+Average ending reward: 0.7900110208893674
+====== step 460 ======
+====== 2023-10-01 00:07:39 ======
+current_statics: {'Total': 1081, 'Reached_0': 508, 'Reached_1': 573, 'Reached_after_computed_0': 508, 'Reached_after_computed_1': 573, 'Lost_upload': 0, 'Lost_relay_0': 8, 'Lost_relay_1': 5, 'Total_delay_0': np.float64(1715.3038769443228), 'Total_delay_1': np.float64(2956.5559375236044), 'Total_hops_0': 4952, 'Total_hops_1': 6476, 'Is_computing': 2602, 'Computing_waiting_time': np.float64(3952.9429201049206)}
+Packet loss rate: 1.19%
+Average delay for successful transmissions: 4.322 seconds
+Average hop count for successful transmissions: 10.572 hops
+Proportion of satellites in computation: 90.35%
+Average waiting time for computing: 3.657 seconds
+Average ending reward: 0.7839102768516336
+====== step 470 ======
+====== 2023-10-01 00:07:49 ======
+current_statics: {'Total': 1035, 'Reached_0': 504, 'Reached_1': 520, 'Reached_after_computed_0': 504, 'Reached_after_computed_1': 520, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 6, 'Total_delay_0': np.float64(1674.086000677562), 'Total_delay_1': np.float64(2646.058467605195), 'Total_hops_0': 4823, 'Total_hops_1': 5546, 'Is_computing': 2514, 'Computing_waiting_time': np.float64(3641.841459772171)}
+Packet loss rate: 0.68%
+Average delay for successful transmissions: 4.219 seconds
+Average hop count for successful transmissions: 10.126 hops
+Proportion of satellites in computation: 87.29%
+Average waiting time for computing: 3.556 seconds
+Average ending reward: 0.7890554458846406
+====== step 480 ======
+====== 2023-10-01 00:07:59 ======
+current_statics: {'Total': 992, 'Reached_0': 448, 'Reached_1': 553, 'Reached_after_computed_0': 448, 'Reached_after_computed_1': 553, 'Lost_upload': 0, 'Lost_relay_0': 4, 'Lost_relay_1': 4, 'Total_delay_0': np.float64(1464.8061314726074), 'Total_delay_1': np.float64(2835.0051053883217), 'Total_hops_0': 4093, 'Total_hops_1': 5601, 'Is_computing': 2531, 'Computing_waiting_time': np.float64(3709.790230123588)}
+Packet loss rate: 0.79%
+Average delay for successful transmissions: 4.296 seconds
+Average hop count for successful transmissions: 9.684 hops
+Proportion of satellites in computation: 87.88%
+Average waiting time for computing: 3.706 seconds
+Average ending reward: 0.7852242139430036
+====== step 490 ======
+====== 2023-10-01 00:08:09 ======
+current_statics: {'Total': 1033, 'Reached_0': 440, 'Reached_1': 584, 'Reached_after_computed_0': 440, 'Reached_after_computed_1': 584, 'Lost_upload': 0, 'Lost_relay_0': 3, 'Lost_relay_1': 9, 'Total_delay_0': np.float64(1427.6804517478886), 'Total_delay_1': np.float64(2954.005884495811), 'Total_hops_0': 4060, 'Total_hops_1': 5879, 'Is_computing': 2609, 'Computing_waiting_time': np.float64(3826.1675208219676)}
+Packet loss rate: 1.16%
+Average delay for successful transmissions: 4.279 seconds
+Average hop count for successful transmissions: 9.706 hops
+Proportion of satellites in computation: 90.59%
+Average waiting time for computing: 3.736 seconds
+Average ending reward: 0.7860504718631034
+====== step 500 ======
+====== 2023-10-01 00:08:19 ======
+current_statics: {'Total': 1042, 'Reached_0': 444, 'Reached_1': 611, 'Reached_after_computed_0': 444, 'Reached_after_computed_1': 611, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 3, 'Total_delay_0': np.float64(1385.9765051492868), 'Total_delay_1': np.float64(2982.4255507622), 'Total_hops_0': 3714, 'Total_hops_1': 5650, 'Is_computing': 2595, 'Computing_waiting_time': np.float64(3841.7067360231304)}
+Packet loss rate: 0.38%
+Average delay for successful transmissions: 4.141 seconds
+Average hop count for successful transmissions: 8.876 hops
+Proportion of satellites in computation: 90.10%
+Average waiting time for computing: 3.641 seconds
+Average ending reward: 0.7929667272079941
+====== step 510 ======
+====== 2023-10-01 00:08:29 ======
+current_statics: {'Total': 1020, 'Reached_0': 447, 'Reached_1': 562, 'Reached_after_computed_0': 447, 'Reached_after_computed_1': 562, 'Lost_upload': 0, 'Lost_relay_0': 7, 'Lost_relay_1': 6, 'Total_delay_0': np.float64(1390.9566559819214), 'Total_delay_1': np.float64(2698.2782829162898), 'Total_hops_0': 3722, 'Total_hops_1': 5305, 'Is_computing': 2565, 'Computing_waiting_time': np.float64(3538.081169653422)}
+Packet loss rate: 1.27%
+Average delay for successful transmissions: 4.053 seconds
+Average hop count for successful transmissions: 8.946 hops
+Proportion of satellites in computation: 89.06%
+Average waiting time for computing: 3.507 seconds
+Average ending reward: 0.7973619950991764
+====== step 520 ======
+====== 2023-10-01 00:08:39 ======
+current_statics: {'Total': 994, 'Reached_0': 461, 'Reached_1': 552, 'Reached_after_computed_0': 461, 'Reached_after_computed_1': 552, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 3, 'Total_delay_0': np.float64(1378.193771783801), 'Total_delay_1': np.float64(2611.0419028518663), 'Total_hops_0': 3596, 'Total_hops_1': 4826, 'Is_computing': 2475, 'Computing_waiting_time': np.float64(3477.9630037901807)}
+Packet loss rate: 0.39%
+Average delay for successful transmissions: 3.938 seconds
+Average hop count for successful transmissions: 8.314 hops
+Proportion of satellites in computation: 85.94%
+Average waiting time for computing: 3.433 seconds
+Average ending reward: 0.8030979430091003
+====== step 530 ======
+====== 2023-10-01 00:08:49 ======
+current_statics: {'Total': 1106, 'Reached_0': 467, 'Reached_1': 546, 'Reached_after_computed_0': 467, 'Reached_after_computed_1': 546, 'Lost_upload': 0, 'Lost_relay_0': 4, 'Lost_relay_1': 7, 'Total_delay_0': np.float64(1433.5205654789024), 'Total_delay_1': np.float64(2494.154553990724), 'Total_hops_0': 3849, 'Total_hops_1': 5321, 'Is_computing': 2559, 'Computing_waiting_time': np.float64(3376.759080805583)}
+Packet loss rate: 1.07%
+Average delay for successful transmissions: 3.877 seconds
+Average hop count for successful transmissions: 9.052 hops
+Proportion of satellites in computation: 88.85%
+Average waiting time for computing: 3.333 seconds
+Average ending reward: 0.8061364699175833
+====== step 540 ======
+====== 2023-10-01 00:08:59 ======
+current_statics: {'Total': 1114, 'Reached_0': 536, 'Reached_1': 564, 'Reached_after_computed_0': 536, 'Reached_after_computed_1': 564, 'Lost_upload': 0, 'Lost_relay_0': 7, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1815.34203312725), 'Total_delay_1': np.float64(2738.778338308446), 'Total_hops_0': 4657, 'Total_hops_1': 5597, 'Is_computing': 2716, 'Computing_waiting_time': np.float64(3863.3071911531733)}
+Packet loss rate: 0.72%
+Average delay for successful transmissions: 4.140 seconds
+Average hop count for successful transmissions: 9.322 hops
+Proportion of satellites in computation: 94.31%
+Average waiting time for computing: 3.512 seconds
+Average ending reward: 0.7929945285711049
+====== step 550 ======
+====== 2023-10-01 00:09:09 ======
+current_statics: {'Total': 1122, 'Reached_0': 593, 'Reached_1': 553, 'Reached_after_computed_0': 593, 'Reached_after_computed_1': 553, 'Lost_upload': 0, 'Lost_relay_0': 3, 'Lost_relay_1': 4, 'Total_delay_0': np.float64(1972.7225081268698), 'Total_delay_1': np.float64(2670.8625495228916), 'Total_hops_0': 5119, 'Total_hops_1': 5614, 'Is_computing': 2673, 'Computing_waiting_time': np.float64(3884.5066652256355)}
+Packet loss rate: 0.61%
+Average delay for successful transmissions: 4.052 seconds
+Average hop count for successful transmissions: 9.366 hops
+Proportion of satellites in computation: 92.81%
+Average waiting time for computing: 3.390 seconds
+Average ending reward: 0.7974003028948563
+====== step 560 ======
+====== 2023-10-01 00:09:19 ======
+current_statics: {'Total': 1112, 'Reached_0': 544, 'Reached_1': 552, 'Reached_after_computed_0': 544, 'Reached_after_computed_1': 552, 'Lost_upload': 0, 'Lost_relay_0': 5, 'Lost_relay_1': 2, 'Total_delay_0': np.float64(1807.3815725442983), 'Total_delay_1': np.float64(2657.3671019360772), 'Total_hops_0': 4870, 'Total_hops_1': 5892, 'Is_computing': 2582, 'Computing_waiting_time': np.float64(3819.2664439578366)}
+Packet loss rate: 0.63%
+Average delay for successful transmissions: 4.074 seconds
+Average hop count for successful transmissions: 9.819 hops
+Proportion of satellites in computation: 89.65%
+Average waiting time for computing: 3.485 seconds
+Average ending reward: 0.7963162101058164
+====== step 570 ======
+====== 2023-10-01 00:09:29 ======
+current_statics: {'Total': 1093, 'Reached_0': 537, 'Reached_1': 530, 'Reached_after_computed_0': 537, 'Reached_after_computed_1': 530, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 3, 'Total_delay_0': np.float64(1918.375625914341), 'Total_delay_1': np.float64(2633.4245083296264), 'Total_hops_0': 5051, 'Total_hops_1': 5956, 'Is_computing': 2556, 'Computing_waiting_time': np.float64(3945.245254297275)}
+Packet loss rate: 0.37%
+Average delay for successful transmissions: 4.266 seconds
+Average hop count for successful transmissions: 10.316 hops
+Proportion of satellites in computation: 88.75%
+Average waiting time for computing: 3.698 seconds
+Average ending reward: 0.7867010246370988
+====== step 580 ======
+====== 2023-10-01 00:09:39 ======
+current_statics: {'Total': 1047, 'Reached_0': 559, 'Reached_1': 530, 'Reached_after_computed_0': 559, 'Reached_after_computed_1': 530, 'Lost_upload': 0, 'Lost_relay_0': 4, 'Lost_relay_1': 7, 'Total_delay_0': np.float64(1910.3013522440742), 'Total_delay_1': np.float64(2611.3448093466577), 'Total_hops_0': 4841, 'Total_hops_1': 5328, 'Is_computing': 2586, 'Computing_waiting_time': np.float64(3916.745163491316)}
+Packet loss rate: 1.00%
+Average delay for successful transmissions: 4.152 seconds
+Average hop count for successful transmissions: 9.338 hops
+Proportion of satellites in computation: 89.79%
+Average waiting time for computing: 3.597 seconds
+Average ending reward: 0.7923945747662615
+====== step 590 ======
+====== 2023-10-01 00:09:49 ======
+current_statics: {'Total': 998, 'Reached_0': 540, 'Reached_1': 519, 'Reached_after_computed_0': 540, 'Reached_after_computed_1': 519, 'Lost_upload': 0, 'Lost_relay_0': 5, 'Lost_relay_1': 7, 'Total_delay_0': np.float64(1636.119514463251), 'Total_delay_1': np.float64(2363.6335720373318), 'Total_hops_0': 4774, 'Total_hops_1': 5278, 'Is_computing': 2491, 'Computing_waiting_time': np.float64(3466.121560267289)}
+Packet loss rate: 1.12%
+Average delay for successful transmissions: 3.777 seconds
+Average hop count for successful transmissions: 9.492 hops
+Proportion of satellites in computation: 86.49%
+Average waiting time for computing: 3.273 seconds
+Average ending reward: 0.8111542452077218
+====== step 600 ======
+====== 2023-10-01 00:09:59 ======
+current_statics: {'Total': 943, 'Reached_0': 511, 'Reached_1': 475, 'Reached_after_computed_0': 511, 'Reached_after_computed_1': 475, 'Lost_upload': 0, 'Lost_relay_0': 4, 'Lost_relay_1': 5, 'Total_delay_0': np.float64(1384.2254857831285), 'Total_delay_1': np.float64(2063.9763666593644), 'Total_hops_0': 4326, 'Total_hops_1': 4703, 'Is_computing': 2320, 'Computing_waiting_time': np.float64(2982.8692232757166)}
+Packet loss rate: 0.90%
+Average delay for successful transmissions: 3.497 seconds
+Average hop count for successful transmissions: 9.157 hops
+Proportion of satellites in computation: 80.56%
+Average waiting time for computing: 3.025 seconds
+Average ending reward: 0.8251418938923778
+====== step 610 ======
+====== 2023-10-01 00:10:09 ======
+current_statics: {'Total': 1021, 'Reached_0': 480, 'Reached_1': 491, 'Reached_after_computed_0': 480, 'Reached_after_computed_1': 491, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1183.0251920128649), 'Total_delay_1': np.float64(1902.838514375413), 'Total_hops_0': 3857, 'Total_hops_1': 4599, 'Is_computing': 2341, 'Computing_waiting_time': np.float64(2678.6652460647747)}
+Packet loss rate: 0.00%
+Average delay for successful transmissions: 3.178 seconds
+Average hop count for successful transmissions: 8.709 hops
+Proportion of satellites in computation: 81.28%
+Average waiting time for computing: 2.759 seconds
+Average ending reward: 0.8410986762930884
+====== step 620 ======
+====== 2023-10-01 00:10:19 ======
+current_statics: {'Total': 1038, 'Reached_0': 523, 'Reached_1': 507, 'Reached_after_computed_0': 523, 'Reached_after_computed_1': 507, 'Lost_upload': 0, 'Lost_relay_0': 3, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1345.2037407754542), 'Total_delay_1': np.float64(2054.390166052355), 'Total_hops_0': 4169, 'Total_hops_1': 4927, 'Is_computing': 2426, 'Computing_waiting_time': np.float64(2937.3895051099535)}
+Packet loss rate: 0.39%
+Average delay for successful transmissions: 3.301 seconds
+Average hop count for successful transmissions: 8.831 hops
+Proportion of satellites in computation: 84.24%
+Average waiting time for computing: 2.852 seconds
+Average ending reward: 0.8349711695714725
+====== step 630 ======
+====== 2023-10-01 00:10:29 ======
+current_statics: {'Total': 1008, 'Reached_0': 513, 'Reached_1': 486, 'Reached_after_computed_0': 513, 'Reached_after_computed_1': 486, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1361.8106530176592), 'Total_delay_1': np.float64(2055.8340915753506), 'Total_hops_0': 4570, 'Total_hops_1': 5199, 'Is_computing': 2409, 'Computing_waiting_time': np.float64(2945.2729757225316)}
+Packet loss rate: 0.20%
+Average delay for successful transmissions: 3.421 seconds
+Average hop count for successful transmissions: 9.779 hops
+Proportion of satellites in computation: 83.65%
+Average waiting time for computing: 2.948 seconds
+Average ending reward: 0.8289467094798446
+====== step 640 ======
+====== 2023-10-01 00:10:39 ======
+current_statics: {'Total': 1010, 'Reached_0': 563, 'Reached_1': 445, 'Reached_after_computed_0': 563, 'Reached_after_computed_1': 445, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 2, 'Total_delay_0': np.float64(1530.9069067637756), 'Total_delay_1': np.float64(1928.1893186650414), 'Total_hops_0': 5017, 'Total_hops_1': 4370, 'Is_computing': 2391, 'Computing_waiting_time': np.float64(2940.7904261992953)}
+Packet loss rate: 0.40%
+Average delay for successful transmissions: 3.432 seconds
+Average hop count for successful transmissions: 9.312 hops
+Proportion of satellites in computation: 83.02%
+Average waiting time for computing: 2.917 seconds
+Average ending reward: 0.8284178459608685
+====== step 650 ======
+====== 2023-10-01 00:10:49 ======
+current_statics: {'Total': 1012, 'Reached_0': 586, 'Reached_1': 445, 'Reached_after_computed_0': 586, 'Reached_after_computed_1': 445, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 2, 'Total_delay_0': np.float64(1627.5283508599387), 'Total_delay_1': np.float64(1969.1239739244338), 'Total_hops_0': 5236, 'Total_hops_1': 4317, 'Is_computing': 2383, 'Computing_waiting_time': np.float64(3024.3625902128406)}
+Packet loss rate: 0.19%
+Average delay for successful transmissions: 3.489 seconds
+Average hop count for successful transmissions: 9.266 hops
+Proportion of satellites in computation: 82.74%
+Average waiting time for computing: 2.933 seconds
+Average ending reward: 0.8255745720279343
+====== step 660 ======
+====== 2023-10-01 00:10:59 ======
+current_statics: {'Total': 979, 'Reached_0': 558, 'Reached_1': 429, 'Reached_after_computed_0': 558, 'Reached_after_computed_1': 429, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1410.8774947978527), 'Total_delay_1': np.float64(1742.5264644452254), 'Total_hops_0': 4922, 'Total_hops_1': 4112, 'Is_computing': 2250, 'Computing_waiting_time': np.float64(2656.3346013663104)}
+Packet loss rate: 0.20%
+Average delay for successful transmissions: 3.195 seconds
+Average hop count for successful transmissions: 9.153 hops
+Proportion of satellites in computation: 78.12%
+Average waiting time for computing: 2.691 seconds
+Average ending reward: 0.8402530922369115
+====== step 670 ======
+====== 2023-10-01 00:11:09 ======
+current_statics: {'Total': 1076, 'Reached_0': 547, 'Reached_1': 469, 'Reached_after_computed_0': 547, 'Reached_after_computed_1': 469, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 3, 'Total_delay_0': np.float64(1450.3093305249931), 'Total_delay_1': np.float64(1968.6129951609473), 'Total_hops_0': 4701, 'Total_hops_1': 4551, 'Is_computing': 2450, 'Computing_waiting_time': np.float64(2912.858279949258)}
+Packet loss rate: 0.29%
+Average delay for successful transmissions: 3.365 seconds
+Average hop count for successful transmissions: 9.106 hops
+Proportion of satellites in computation: 85.07%
+Average waiting time for computing: 2.867 seconds
+Average ending reward: 0.8317459485390755
+====== step 680 ======
+====== 2023-10-01 00:11:19 ======
+current_statics: {'Total': 1077, 'Reached_0': 540, 'Reached_1': 519, 'Reached_after_computed_0': 540, 'Reached_after_computed_1': 519, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1534.805632581687), 'Total_delay_1': np.float64(2230.9865414903325), 'Total_hops_0': 4637, 'Total_hops_1': 5176, 'Is_computing': 2527, 'Computing_waiting_time': np.float64(3224.28111771759)}
+Packet loss rate: 0.19%
+Average delay for successful transmissions: 3.556 seconds
+Average hop count for successful transmissions: 9.266 hops
+Proportion of satellites in computation: 87.74%
+Average waiting time for computing: 3.045 seconds
+Average ending reward: 0.8222005583535367
+====== step 690 ======
+====== 2023-10-01 00:11:29 ======
+current_statics: {'Total': 1096, 'Reached_0': 525, 'Reached_1': 559, 'Reached_after_computed_0': 525, 'Reached_after_computed_1': 559, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1546.8442268552608), 'Total_delay_1': np.float64(2469.6367314217496), 'Total_hops_0': 4396, 'Total_hops_1': 5266, 'Is_computing': 2631, 'Computing_waiting_time': np.float64(3435.932664417516)}
+Packet loss rate: 0.28%
+Average delay for successful transmissions: 3.705 seconds
+Average hop count for successful transmissions: 8.913 hops
+Proportion of satellites in computation: 91.35%
+Average waiting time for computing: 3.170 seconds
+Average ending reward: 0.8147379631790973
+====== step 700 ======
+====== 2023-10-01 00:11:39 ======
+current_statics: {'Total': 1112, 'Reached_0': 533, 'Reached_1': 558, 'Reached_after_computed_0': 533, 'Reached_after_computed_1': 558, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1623.4608091682312), 'Total_delay_1': np.float64(2529.5185235601675), 'Total_hops_0': 4843, 'Total_hops_1': 5446, 'Is_computing': 2617, 'Computing_waiting_time': np.float64(3485.5248890097137)}
+Packet loss rate: 0.18%
+Average delay for successful transmissions: 3.807 seconds
+Average hop count for successful transmissions: 9.431 hops
+Proportion of satellites in computation: 90.87%
+Average waiting time for computing: 3.195 seconds
+Average ending reward: 0.8096709746687378
+====== step 710 ======
+====== 2023-10-01 00:11:49 ======
+current_statics: {'Total': 981, 'Reached_0': 517, 'Reached_1': 525, 'Reached_after_computed_0': 517, 'Reached_after_computed_1': 525, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1530.556480558589), 'Total_delay_1': np.float64(2398.525574187952), 'Total_hops_0': 4350, 'Total_hops_1': 4999, 'Is_computing': 2462, 'Computing_waiting_time': np.float64(3336.743859555776)}
+Packet loss rate: 0.00%
+Average delay for successful transmissions: 3.771 seconds
+Average hop count for successful transmissions: 8.972 hops
+Proportion of satellites in computation: 85.49%
+Average waiting time for computing: 3.202 seconds
+Average ending reward: 0.8114643927664754
+====== step 720 ======
+====== 2023-10-01 00:11:59 ======
+current_statics: {'Total': 951, 'Reached_0': 461, 'Reached_1': 526, 'Reached_after_computed_0': 461, 'Reached_after_computed_1': 526, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1281.7336773676943), 'Total_delay_1': np.float64(2252.44937051984), 'Total_hops_0': 3935, 'Total_hops_1': 4839, 'Is_computing': 2404, 'Computing_waiting_time': np.float64(3030.9642857214785)}
+Packet loss rate: 0.20%
+Average delay for successful transmissions: 3.581 seconds
+Average hop count for successful transmissions: 8.890 hops
+Proportion of satellites in computation: 83.47%
+Average waiting time for computing: 3.071 seconds
+Average ending reward: 0.820963371434275
+====== step 730 ======
+====== 2023-10-01 00:12:09 ======
+current_statics: {'Total': 1039, 'Reached_0': 484, 'Reached_1': 518, 'Reached_after_computed_0': 484, 'Reached_after_computed_1': 518, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 2, 'Total_delay_0': np.float64(1239.1979216499167), 'Total_delay_1': np.float64(2151.193956975447), 'Total_hops_0': 3983, 'Total_hops_1': 4428, 'Is_computing': 2497, 'Computing_waiting_time': np.float64(2933.564854223194)}
+Packet loss rate: 0.20%
+Average delay for successful transmissions: 3.384 seconds
+Average hop count for successful transmissions: 8.394 hops
+Proportion of satellites in computation: 86.70%
+Average waiting time for computing: 2.928 seconds
+Average ending reward: 0.8308187685316852
+====== step 740 ======
+====== 2023-10-01 00:12:19 ======
+current_statics: {'Total': 1067, 'Reached_0': 537, 'Reached_1': 531, 'Reached_after_computed_0': 537, 'Reached_after_computed_1': 531, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1484.9148260513466), 'Total_delay_1': np.float64(2230.188122325955), 'Total_hops_0': 4449, 'Total_hops_1': 4692, 'Is_computing': 2550, 'Computing_waiting_time': np.float64(3165.67493952316)}
+Packet loss rate: 0.19%
+Average delay for successful transmissions: 3.479 seconds
+Average hop count for successful transmissions: 8.559 hops
+Proportion of satellites in computation: 88.54%
+Average waiting time for computing: 2.964 seconds
+Average ending reward: 0.8260719593456292
+====== step 750 ======
+====== 2023-10-01 00:12:29 ======
+current_statics: {'Total': 1106, 'Reached_0': 572, 'Reached_1': 509, 'Reached_after_computed_0': 572, 'Reached_after_computed_1': 509, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 2, 'Total_delay_0': np.float64(1523.127337823069), 'Total_delay_1': np.float64(2152.532060085854), 'Total_hops_0': 4692, 'Total_hops_1': 4603, 'Is_computing': 2560, 'Computing_waiting_time': np.float64(3097.663374147436)}
+Packet loss rate: 0.28%
+Average delay for successful transmissions: 3.400 seconds
+Average hop count for successful transmissions: 8.599 hops
+Proportion of satellites in computation: 88.89%
+Average waiting time for computing: 2.866 seconds
+Average ending reward: 0.829988001946834
+====== step 760 ======
+====== 2023-10-01 00:12:39 ======
+current_statics: {'Total': 1044, 'Reached_0': 561, 'Reached_1': 499, 'Reached_after_computed_0': 561, 'Reached_after_computed_1': 499, 'Lost_upload': 0, 'Lost_relay_0': 3, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1511.8628585522529), 'Total_delay_1': np.float64(2197.6285074295592), 'Total_hops_0': 4443, 'Total_hops_1': 4440, 'Is_computing': 2501, 'Computing_waiting_time': np.float64(3185.382492866367)}
+Packet loss rate: 0.38%
+Average delay for successful transmissions: 3.500 seconds
+Average hop count for successful transmissions: 8.380 hops
+Proportion of satellites in computation: 86.84%
+Average waiting time for computing: 3.005 seconds
+Average ending reward: 0.8250239921706757
+====== step 770 ======
+====== 2023-10-01 00:12:49 ======
+current_statics: {'Total': 1044, 'Reached_0': 603, 'Reached_1': 450, 'Reached_after_computed_0': 603, 'Reached_after_computed_1': 450, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 2, 'Total_delay_0': np.float64(1622.0345643979672), 'Total_delay_1': np.float64(1980.7318650800444), 'Total_hops_0': 4913, 'Total_hops_1': 4025, 'Is_computing': 2428, 'Computing_waiting_time': np.float64(3069.6908270960557)}
+Packet loss rate: 0.19%
+Average delay for successful transmissions: 3.421 seconds
+Average hop count for successful transmissions: 8.488 hops
+Proportion of satellites in computation: 84.31%
+Average waiting time for computing: 2.915 seconds
+Average ending reward: 0.8289284696354262
+====== step 780 ======
+====== 2023-10-01 00:12:59 ======
+current_statics: {'Total': 1085, 'Reached_0': 601, 'Reached_1': 458, 'Reached_after_computed_0': 601, 'Reached_after_computed_1': 458, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1569.091325038753), 'Total_delay_1': np.float64(1936.8377286239702), 'Total_hops_0': 4661, 'Total_hops_1': 3977, 'Is_computing': 2440, 'Computing_waiting_time': np.float64(2994.737440185738)}
+Packet loss rate: 0.09%
+Average delay for successful transmissions: 3.311 seconds
+Average hop count for successful transmissions: 8.157 hops
+Proportion of satellites in computation: 84.72%
+Average waiting time for computing: 2.828 seconds
+Average ending reward: 0.8344698274946645
+====== step 790 ======
+====== 2023-10-01 00:13:09 ======
+current_statics: {'Total': 1122, 'Reached_0': 619, 'Reached_1': 495, 'Reached_after_computed_0': 619, 'Reached_after_computed_1': 495, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1703.5240340823511), 'Total_delay_1': np.float64(2109.66281243274), 'Total_hops_0': 4770, 'Total_hops_1': 4374, 'Is_computing': 2581, 'Computing_waiting_time': np.float64(3251.5604584394605)}
+Packet loss rate: 0.18%
+Average delay for successful transmissions: 3.423 seconds
+Average hop count for successful transmissions: 8.208 hops
+Proportion of satellites in computation: 89.62%
+Average waiting time for computing: 2.919 seconds
+Average ending reward: 0.8288515778045322
+====== step 800 ======
+====== 2023-10-01 00:13:19 ======
+current_statics: {'Total': 1137, 'Reached_0': 569, 'Reached_1': 532, 'Reached_after_computed_0': 569, 'Reached_after_computed_1': 532, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1590.8951947528985), 'Total_delay_1': np.float64(2246.1594881038473), 'Total_hops_0': 4253, 'Total_hops_1': 4745, 'Is_computing': 2647, 'Computing_waiting_time': np.float64(3272.9421517020673)}
+Packet loss rate: 0.09%
+Average delay for successful transmissions: 3.485 seconds
+Average hop count for successful transmissions: 8.173 hops
+Proportion of satellites in computation: 91.91%
+Average waiting time for computing: 2.973 seconds
+Average ending reward: 0.8257468354742608
+====== step 810 ======
+====== 2023-10-01 00:13:29 ======
+current_statics: {'Total': 1006, 'Reached_0': 537, 'Reached_1': 544, 'Reached_after_computed_0': 537, 'Reached_after_computed_1': 544, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1517.5434179999284), 'Total_delay_1': np.float64(2484.9765414349968), 'Total_hops_0': 4142, 'Total_hops_1': 4954, 'Is_computing': 2573, 'Computing_waiting_time': np.float64(3370.998008192051)}
+Packet loss rate: 0.00%
+Average delay for successful transmissions: 3.703 seconds
+Average hop count for successful transmissions: 8.414 hops
+Proportion of satellites in computation: 89.34%
+Average waiting time for computing: 3.118 seconds
+Average ending reward: 0.8148695670936666
+====== step 820 ======
+====== 2023-10-01 00:13:39 ======
+current_statics: {'Total': 942, 'Reached_0': 488, 'Reached_1': 497, 'Reached_after_computed_0': 487, 'Reached_after_computed_1': 497, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1200.5665429700748), 'Total_delay_1': np.float64(1972.9739382899716), 'Total_hops_0': 3651, 'Total_hops_1': 4189, 'Is_computing': 2251, 'Computing_waiting_time': np.float64(2738.305951834249)}
+Packet loss rate: 0.10%
+Average delay for successful transmissions: 3.222 seconds
+Average hop count for successful transmissions: 7.959 hops
+Proportion of satellites in computation: 78.16%
+Average waiting time for computing: 2.780 seconds
+Average ending reward: 0.8378913461289312
+====== step 830 ======
+====== 2023-10-01 00:13:49 ======
+current_statics: {'Total': 969, 'Reached_0': 465, 'Reached_1': 478, 'Reached_after_computed_0': 465, 'Reached_after_computed_1': 478, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1141.56614866585), 'Total_delay_1': np.float64(1925.0055446947226), 'Total_hops_0': 3588, 'Total_hops_1': 4064, 'Is_computing': 2318, 'Computing_waiting_time': np.float64(2638.659490497026)}
+Packet loss rate: 0.21%
+Average delay for successful transmissions: 3.252 seconds
+Average hop count for successful transmissions: 8.115 hops
+Proportion of satellites in computation: 80.49%
+Average waiting time for computing: 2.798 seconds
+Average ending reward: 0.8374034096839819
+====== step 840 ======
+====== 2023-10-01 00:13:59 ======
+current_statics: {'Total': 991, 'Reached_0': 470, 'Reached_1': 501, 'Reached_after_computed_0': 469, 'Reached_after_computed_1': 499, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1198.528265098692), 'Total_delay_1': np.float64(2055.197042890446), 'Total_hops_0': 3549, 'Total_hops_1': 4371, 'Is_computing': 2334, 'Computing_waiting_time': np.float64(2794.335277707083)}
+Packet loss rate: 0.00%
+Average delay for successful transmissions: 3.351 seconds
+Average hop count for successful transmissions: 8.157 hops
+Proportion of satellites in computation: 81.04%
+Average waiting time for computing: 2.878 seconds
+Average ending reward: 0.8293653291457724
+====== step 850 ======
+====== 2023-10-01 00:14:09 ======
+current_statics: {'Total': 1014, 'Reached_0': 507, 'Reached_1': 493, 'Reached_after_computed_0': 507, 'Reached_after_computed_1': 486, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1330.7998201959417), 'Total_delay_1': np.float64(2125.4794966473128), 'Total_hops_0': 3878, 'Total_hops_1': 4203, 'Is_computing': 2384, 'Computing_waiting_time': np.float64(2925.9885120943654)}
+Packet loss rate: 0.20%
+Average delay for successful transmissions: 3.456 seconds
+Average hop count for successful transmissions: 8.081 hops
+Proportion of satellites in computation: 82.78%
+Average waiting time for computing: 2.926 seconds
+Average ending reward: 0.8201860341578182
+====== step 860 ======
+====== 2023-10-01 00:14:19 ======
+current_statics: {'Total': 1036, 'Reached_0': 603, 'Reached_1': 449, 'Reached_after_computed_0': 603, 'Reached_after_computed_1': 447, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 2, 'Total_delay_0': np.float64(1522.747209904017), 'Total_delay_1': np.float64(1935.2349388904695), 'Total_hops_0': 4507, 'Total_hops_1': 3808, 'Is_computing': 2407, 'Computing_waiting_time': np.float64(2923.9156672055833)}
+Packet loss rate: 0.19%
+Average delay for successful transmissions: 3.287 seconds
+Average hop count for successful transmissions: 7.904 hops
+Proportion of satellites in computation: 83.58%
+Average waiting time for computing: 2.779 seconds
+Average ending reward: 0.8337460955896135
+====== step 870 ======
+====== 2023-10-01 00:14:29 ======
+current_statics: {'Total': 1028, 'Reached_0': 593, 'Reached_1': 451, 'Reached_after_computed_0': 593, 'Reached_after_computed_1': 451, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1427.1384466395248), 'Total_delay_1': np.float64(1827.4497434547811), 'Total_hops_0': 4604, 'Total_hops_1': 3973, 'Is_computing': 2357, 'Computing_waiting_time': np.float64(2762.719778898754)}
+Packet loss rate: 0.00%
+Average delay for successful transmissions: 3.117 seconds
+Average hop count for successful transmissions: 8.216 hops
+Proportion of satellites in computation: 81.84%
+Average waiting time for computing: 2.646 seconds
+Average ending reward: 0.8441289180989285
+====== step 880 ======
+====== 2023-10-01 00:14:39 ======
+current_statics: {'Total': 1052, 'Reached_0': 588, 'Reached_1': 441, 'Reached_after_computed_0': 588, 'Reached_after_computed_1': 441, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1383.5055318532104), 'Total_delay_1': np.float64(1742.1580151191738), 'Total_hops_0': 4629, 'Total_hops_1': 3830, 'Is_computing': 2339, 'Computing_waiting_time': np.float64(2650.1799791401136)}
+Packet loss rate: 0.10%
+Average delay for successful transmissions: 3.038 seconds
+Average hop count for successful transmissions: 8.221 hops
+Proportion of satellites in computation: 81.22%
+Average waiting time for computing: 2.575 seconds
+Average ending reward: 0.8481213048118278
+====== step 890 ======
+====== 2023-10-01 00:14:49 ======
+current_statics: {'Total': 1045, 'Reached_0': 570, 'Reached_1': 456, 'Reached_after_computed_0': 570, 'Reached_after_computed_1': 456, 'Lost_upload': 0, 'Lost_relay_0': 3, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1389.983829134464), 'Total_delay_1': np.float64(1899.5418197918625), 'Total_hops_0': 4927, 'Total_hops_1': 4175, 'Is_computing': 2399, 'Computing_waiting_time': np.float64(2728.818770241516)}
+Packet loss rate: 0.39%
+Average delay for successful transmissions: 3.206 seconds
+Average hop count for successful transmissions: 8.871 hops
+Proportion of satellites in computation: 83.30%
+Average waiting time for computing: 2.660 seconds
+Average ending reward: 0.8396917325084409
+====== step 900 ======
+====== 2023-10-01 00:14:59 ======
+current_statics: {'Total': 1069, 'Reached_0': 545, 'Reached_1': 508, 'Reached_after_computed_0': 545, 'Reached_after_computed_1': 508, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 2, 'Total_delay_0': np.float64(1406.8099679855804), 'Total_delay_1': np.float64(2214.6097326086892), 'Total_hops_0': 4973, 'Total_hops_1': 4657, 'Is_computing': 2533, 'Computing_waiting_time': np.float64(3022.2433263033745)}
+Packet loss rate: 0.28%
+Average delay for successful transmissions: 3.439 seconds
+Average hop count for successful transmissions: 9.145 hops
+Proportion of satellites in computation: 87.95%
+Average waiting time for computing: 2.870 seconds
+Average ending reward: 0.8280427492595247
+====== step 910 ======
+====== 2023-10-01 00:15:09 ======
+current_statics: {'Total': 1043, 'Reached_0': 511, 'Reached_1': 515, 'Reached_after_computed_0': 511, 'Reached_after_computed_1': 515, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1414.5128930287901), 'Total_delay_1': np.float64(2356.1280128837097), 'Total_hops_0': 4593, 'Total_hops_1': 4846, 'Is_computing': 2507, 'Computing_waiting_time': np.float64(3087.33450064942)}
+Packet loss rate: 0.00%
+Average delay for successful transmissions: 3.675 seconds
+Average hop count for successful transmissions: 9.200 hops
+Proportion of satellites in computation: 87.05%
+Average waiting time for computing: 3.009 seconds
+Average ending reward: 0.8162455698873133
+====== step 920 ======
+====== 2023-10-01 00:15:19 ======
+current_statics: {'Total': 1060, 'Reached_0': 563, 'Reached_1': 508, 'Reached_after_computed_0': 563, 'Reached_after_computed_1': 508, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1535.1972987080517), 'Total_delay_1': np.float64(2261.1021218776295), 'Total_hops_0': 4893, 'Total_hops_1': 4832, 'Is_computing': 2514, 'Computing_waiting_time': np.float64(3148.071642608731)}
+Packet loss rate: 0.19%
+Average delay for successful transmissions: 3.545 seconds
+Average hop count for successful transmissions: 9.080 hops
+Proportion of satellites in computation: 87.29%
+Average waiting time for computing: 2.939 seconds
+Average ending reward: 0.8227684677597915
+====== step 930 ======
+====== 2023-10-01 00:15:29 ======
+current_statics: {'Total': 1057, 'Reached_0': 547, 'Reached_1': 499, 'Reached_after_computed_0': 547, 'Reached_after_computed_1': 499, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 2, 'Total_delay_0': np.float64(1463.8408817412856), 'Total_delay_1': np.float64(2162.0773388893576), 'Total_hops_0': 4549, 'Total_hops_1': 4291, 'Is_computing': 2510, 'Computing_waiting_time': np.float64(3083.2094396206667)}
+Packet loss rate: 0.38%
+Average delay for successful transmissions: 3.466 seconds
+Average hop count for successful transmissions: 8.451 hops
+Proportion of satellites in computation: 87.15%
+Average waiting time for computing: 2.948 seconds
+Average ending reward: 0.8266769493006164
+====== step 940 ======
+====== 2023-10-01 00:15:39 ======
+current_statics: {'Total': 1052, 'Reached_0': 493, 'Reached_1': 567, 'Reached_after_computed_0': 493, 'Reached_after_computed_1': 567, 'Lost_upload': 0, 'Lost_relay_0': 2, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1368.6874172605749), 'Total_delay_1': np.float64(2407.13290619693), 'Total_hops_0': 4053, 'Total_hops_1': 4786, 'Is_computing': 2526, 'Computing_waiting_time': np.float64(3217.2725670424406)}
+Packet loss rate: 0.19%
+Average delay for successful transmissions: 3.562 seconds
+Average hop count for successful transmissions: 8.339 hops
+Proportion of satellites in computation: 87.71%
+Average waiting time for computing: 3.035 seconds
+Average ending reward: 0.8218952677614457
+====== step 950 ======
+====== 2023-10-01 00:15:49 ======
+current_statics: {'Total': 925, 'Reached_0': 457, 'Reached_1': 521, 'Reached_after_computed_0': 457, 'Reached_after_computed_1': 521, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1274.8855027619866), 'Total_delay_1': np.float64(2317.803704859107), 'Total_hops_0': 3600, 'Total_hops_1': 4311, 'Is_computing': 2406, 'Computing_waiting_time': np.float64(3085.9597137293895)}
+Packet loss rate: 0.20%
+Average delay for successful transmissions: 3.674 seconds
+Average hop count for successful transmissions: 8.089 hops
+Proportion of satellites in computation: 83.54%
+Average waiting time for computing: 3.155 seconds
+Average ending reward: 0.8163246826369828
+====== step 960 ======
+====== 2023-10-01 00:15:59 ======
+current_statics: {'Total': 989, 'Reached_0': 463, 'Reached_1': 505, 'Reached_after_computed_0': 463, 'Reached_after_computed_1': 505, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1159.294982695632), 'Total_delay_1': np.float64(2112.5658749890863), 'Total_hops_0': 3326, 'Total_hops_1': 3822, 'Is_computing': 2371, 'Computing_waiting_time': np.float64(2836.3858543109964)}
+Packet loss rate: 0.10%
+Average delay for successful transmissions: 3.380 seconds
+Average hop count for successful transmissions: 7.384 hops
+Proportion of satellites in computation: 82.33%
+Average waiting time for computing: 2.930 seconds
+Average ending reward: 0.8309989226402629
+====== step 970 ======
+====== 2023-10-01 00:16:09 ======
+current_statics: {'Total': 978, 'Reached_0': 495, 'Reached_1': 509, 'Reached_after_computed_0': 495, 'Reached_after_computed_1': 509, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1207.2109695630497), 'Total_delay_1': np.float64(2093.8581093116663), 'Total_hops_0': 3518, 'Total_hops_1': 3901, 'Is_computing': 2330, 'Computing_waiting_time': np.float64(2858.4940974158235)}
+Packet loss rate: 0.20%
+Average delay for successful transmissions: 3.288 seconds
+Average hop count for successful transmissions: 7.389 hops
+Proportion of satellites in computation: 80.90%
+Average waiting time for computing: 2.847 seconds
+Average ending reward: 0.8356041295381149
+====== step 980 ======
+====== 2023-10-01 00:16:19 ======
+current_statics: {'Total': 1102, 'Reached_0': 529, 'Reached_1': 492, 'Reached_after_computed_0': 529, 'Reached_after_computed_1': 492, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1374.8014923707524), 'Total_delay_1': np.float64(1980.4498130618304), 'Total_hops_0': 3732, 'Total_hops_1': 3790, 'Is_computing': 2477, 'Computing_waiting_time': np.float64(2891.6375690438435)}
+Packet loss rate: 0.00%
+Average delay for successful transmissions: 3.286 seconds
+Average hop count for successful transmissions: 7.367 hops
+Proportion of satellites in computation: 86.01%
+Average waiting time for computing: 2.832 seconds
+Average ending reward: 0.8356879870013431
+====== step 990 ======
+====== 2023-10-01 00:16:29 ======
+current_statics: {'Total': 1054, 'Reached_0': 518, 'Reached_1': 536, 'Reached_after_computed_0': 518, 'Reached_after_computed_1': 536, 'Lost_upload': 0, 'Lost_relay_0': 0, 'Lost_relay_1': 0, 'Total_delay_0': np.float64(1486.7114261794486), 'Total_delay_1': np.float64(2295.091123846709), 'Total_hops_0': 3902, 'Total_hops_1': 4337, 'Is_computing': 2604, 'Computing_waiting_time': np.float64(3183.6024267164757)}
+Packet loss rate: 0.00%
+Average delay for successful transmissions: 3.588 seconds
+Average hop count for successful transmissions: 7.817 hops
+Proportion of satellites in computation: 90.42%
+Average waiting time for computing: 3.020 seconds
+Average ending reward: 0.8205976019911866
+====== step 1000 ======
+====== 2023-10-01 00:16:39 ======
+current_statics: {'Total': 1048, 'Reached_0': 544, 'Reached_1': 501, 'Reached_after_computed_0': 544, 'Reached_after_computed_1': 501, 'Lost_upload': 0, 'Lost_relay_0': 1, 'Lost_relay_1': 1, 'Total_delay_0': np.float64(1514.9530112500652), 'Total_delay_1': np.float64(2192.2889052866667), 'Total_hops_0': 4304, 'Total_hops_1': 4156, 'Is_computing': 2480, 'Computing_waiting_time': np.float64(3135.327336703078)}
+Packet loss rate: 0.19%
+Average delay for successful transmissions: 3.548 seconds
+Average hop count for successful transmissions: 8.096 hops
+Proportion of satellites in computation: 86.11%
+Average waiting time for computing: 3.000 seconds
+Average ending reward: 0.8226200039934598

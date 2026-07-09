@@ -1,0 +1,140 @@
+# GNN-based DQN Training Configuration
+# 使用图神经网络进行卫星路由与计算决策
+#
+# 支持三种观测模式:
+#   - flat: 扁平状态向量 (使用 SimpleQNetwork MLP)
+#   - relational: DGL 图，边信息编码在节点特征中 (使用 RelationalController GAT/GCN)
+#   - graph: DGL 图，边信息作为边特征 (使用 GraphController 消息传递GNN)
+#
+# 使用方法:
+#   python PRC_GNN.py --config train/train_GNN_DQN2hop.yaml
+#   python PRC_GNN.py --config train/train_GNN_DQN2hop.yaml --obs_type relational
+
+general:
+  random_seed: 42
+  phase: 'train'                     # 'train' or 'test'
+  begin_time: '2023-10-01 00:00:00'
+  time_stride: 1
+  rounds: 1
+  skip_time: [60, 0]                 # 每轮间隔 60 分钟
+  duration: 1000                     # 每轮持续时间（秒）
+  epsilon: 0.9                       # 初始探索率
+  min_epsilon: 0.01                  # 最终探索率（提高以保持探索）
+  epsilon_decay: 0.98            # 探索率衰减系数（减缓衰减速度）
+  print_cycle: 10                    # 打印周期
+  select_mode: 1
+  reward_factors: [1, 0.05, 1, 0.1, 0.25]  # [reach, delay, loss, memory_threshold, memory_factor]
+
+agent:
+  # ====================
+  # 模式与观测类型
+  # ====================
+  mode: 'GNN_DQN'
+  
+  # 观测类型（核心配置）:
+  #   - 'flat': 扁平状态向量，使用 MLP 网络
+  #   - 'relational': DGL 图，边信息编码在邻居节点特征中，使用 GAT/GCN
+  #   - 'graph': DGL 图，边信息作为 edata 边特征，使用消息传递 GNN
+  obs_type: 'graph'
+  
+  # 控制器类型（可选，默认与 obs_type 一致）:
+  #   - 'simple' / 'mlp': SimpleQNetwork (MLP)
+  #   - 'relational' / 'rel': RelationalController (GATv2Conv)
+  #   - 'graph' / 'gnn': GraphController (NodeGNBlock + EdgeGNBlock)
+  controller_type: 'graph'
+  
+  # ====================
+  # 状态/观测维度配置
+  # ====================
+  # 扁平模式维度（仅 obs_type='flat' 时使用）
+  state_dim: 33                      # 总状态维度（与原始 New 模式兼容）
+  
+  # 图模式节点特征维度
+  agent_feats: 9                     # 智能体节点特征: [memory_remain, computing_remain, is_producing,
+                                     #                  mission_type, size, computing_demand, size_after,
+                                     #                  hop_to_dest, is_computed]
+  nbr_feats: 4                       # 邻居节点特征 (graph 模式): [memory_remain, computing_remain,
+                                     #                             is_producing, hop_to_dest]
+  nbr_feats_relational: 12           # 邻居节点特征 (relational 模式): nbr_feats + edge_info (含边信息)
+  edge_feats: 3                      # 边特征 (graph 模式): [transmission_size, hop_distance, placeholder]
+  
+  # 动作空间
+  n_actions: 5                       # 动作数: 4 邻居 + 1 本地计算
+  max_nbrs: 4                        # 最大邻居数
+  
+  # ====================
+  # GNN 网络结构
+  # ====================
+  hidden_size: 64                    # 隐藏层维度
+  n_hops: 2                          # GNN 消息传递跳数 (1 或 2)
+  graph_enc_type: 'gn'
+  n_heads: 4                         # graph_enc_type='gat' 时的注意力头数（hidden_size 必须能整除 n_heads）
+  graph_gat_dropout: 0 
+  use_rnn: false                     # 是否使用 RNN 维护时序状态
+  dueling: false                      # 是否使用 Dueling DQN 架构
+  
+  # ====================r
+  # 训练超参数
+  # ====================
+  buffer_size: 500000                # 经验回放缓冲区大小
+  batch_size: 512                    # 批量大小（减小以降低过拟合）
+  gamma: 0.99                        # 折扣因子
+  learning_rate: 0.0002             # 学习率（降低以提高稳定性）
+  target_update_freq: 30            # 目标网络更新频率（增加以提高稳定性）
+  repeat: 10                          # 每次 update 重复训练次数（减少以降低过拟合）
+  
+  # ====================
+  # 模型保存
+  # ====================
+  model_path: 'model_weights/3-18gnn_ddqn_2hopnew0_98_1024_1000_30_10_001_0578.pth'
+
+environment:
+  # ====================
+  # 任务生成参数
+  # ====================
+  mission_possibility: [0.5, 0.5]    # 任务类型概率
+  poisson_rate: 30
+  packet_frequency: 0.578
+  computing_demand_factor: [150, 250]
+  computing_demand_factor_2: [300, 500]
+  size_after_computing_factor: [0.08, 0.125]
+  size_after_computing_1: 40000.0
+  packet_size_range: [200000000.0, 600000000.0]  # [200MB, 600MB]
+  
+  # ====================
+  # 网络拓扑参数
+  # ====================
+  tle_filepath: './Satellite_Data/60Degree_500_12x24_tles.txt'
+  training_data_dir: './test_gat_data'
+  SOD_file_path: './Ground_Data/11_ground_stations.txt'
+  elevation_angle: 45
+  pole: false
+  
+  # ====================
+  # 卫星节点参数
+  # ====================
+  memory: 12000000000.0              # 12GB 内存
+  computing_ability: 50000000000.0   # 50 GFLOPS
+  transmission_rate: 1200000000.0    # 1.2 Gbps 星间链路
+  downlink_rate: 3000000000.0        # 3 Gbps 下行链路
+  downstream_delays: 0.0016667       # 下行延迟
+  mean_interval_time: 30
+  state_update_period: 0.2
+  
+  # ====================
+  # 动态拓扑参数
+  # ====================
+  del_cycle: 30                      # 链路删除周期
+  random_edges_del: 15               # 随机删除边数
+  random_nodes_del: 0                # 随机删除节点数
+  update_cycle: 10                   # 拓扑更新周期
+  n_hops: 2                          # GNN 邻居跳数（与 agent.n_hops 保持一致）
+  
+  # ====================
+  # 日志与可视化
+  # ====================
+  visualize: false
+  print_info: false
+  show_detail: false
+  save_log: false
+  save_training_data: '3-18train_GNN_DQN2hopnew0_98_1024_1000_30_10_001_0578.txt'

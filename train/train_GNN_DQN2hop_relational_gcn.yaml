@@ -1,0 +1,133 @@
+# GNN-based DQN Training Configuration - Relational Mode with GCN
+# 使用关系型图神经网络 (GCNConv) 进行卫星路由与计算决策
+#
+# 特点:
+#   - 使用 RelationalController 控制器
+#   - GCNConv 图卷积聚合邻居信息
+#   - 边信息编码在邻居节点特征中（12维）
+#   - 相比 GAT 计算效率更高，但没有注意力机制
+#
+# 使用方法:
+#   python PRC_GNN.py --config train/train_GNN_DQN2hop_relational_gcn.yaml
+
+general:
+  random_seed: 42
+  phase: 'train'                     # 'train' or 'test'
+  begin_time: '2023-10-01 00:00:00'
+  time_stride: 1
+  rounds: 1
+  skip_time: [60, 0]                 # 每轮间隔 60 分钟
+  duration: 6000                     # 每轮持续时间（秒）
+  epsilon: 0.9                       # 初始探索率
+  min_epsilon: 0.02                  # 最终探索率
+  epsilon_decay: 0.999               # 探索率衰减系数
+  print_cycle: 10                    # 打印周期
+  select_mode: 1
+  reward_factors: [1, 0.05, 1, 0.1, 0.25]  # [reach, delay, loss, memory_threshold, memory_factor]
+
+agent:
+  # ====================
+  # 模式与观测类型
+  # ====================
+  mode: 'GNN_DQN'
+  
+  # 观测类型: relational
+  #   - 使用 PyG 异构图
+  #   - 边信息（transmission_size, hop_distance）编码在邻居节点特征中
+  #   - 适合 GAT/GCN 等标准图卷积
+  obs_type: 'relational'
+  
+  # 控制器类型: relational (使用 GCNConv)
+  controller_type: 'relational'
+  
+  # 图卷积类型: gcn (GCNConv 图卷积)
+  conv_type: 'gcn'
+  
+  # ====================
+  # 状态/观测维度配置
+  # ====================
+  # 图模式节点特征维度
+  agent_feats: 9                     # 智能体节点特征: [memory_remain, computing_remain, is_producing,
+                                     #                  mission_type, size, computing_demand, size_after,
+                                     #                  hop_to_dest, is_computed]
+  nbr_feats: 6                       # 邻居节点特征 (relational 模式): 
+                                     #   [memory_remain, computing_remain, is_producing, hop_to_dest,
+                                     #    transmission_size, hop_distance]
+  edge_feats: 0                      # relational 模式不使用独立边特征
+  
+  # 动作空间
+  n_actions: 5                       # 动作数: 4 邻居 + 1 本地计算
+  max_nbrs: 4                        # 最大邻居数
+  
+  # ====================
+  # GNN 网络结构
+  # ====================
+  hidden_size: 64                    # 隐藏层维度
+  n_hops: 1                          # GNN 消息传递跳数 (1 或 2)
+  use_rnn: false                     # 是否使用 RNN 维护时序状态
+  dueling: true                      # 是否使用 Dueling DQN 架构
+  
+  # ====================
+  # 训练超参数
+  # ====================
+  buffer_size: 500000                # 经验回放缓冲区大小
+  batch_size: 512                    # 批量大小
+  gamma: 0.99                        # 折扣因子
+  learning_rate: 0.0002              # 学习率
+  target_update_freq: 50             # 目标网络更新频率（步数）
+  repeat: 10                         # 每次 update 重复训练次数
+  
+  # ====================
+  # 模型保存
+  # ====================
+  model_path: 'model_weights/gnn_ddqn_2hop_relational_gcn.pth'
+
+environment:
+  # ====================
+  # 任务生成参数
+  # ====================
+  mission_possibility: [0.5, 0.5]    # 任务类型概率
+  poisson_rate: 30
+  packet_frequency: 0.5
+  computing_demand_factor: [150, 250]
+  computing_demand_factor_2: [300, 500]
+  size_after_computing_factor: [0.08, 0.125]
+  size_after_computing_1: 40000.0
+  packet_size_range: [200000000.0, 600000000.0]  # [200MB, 600MB]
+  
+  # ====================
+  # 网络拓扑参数
+  # ====================
+  tle_filepath: './Satellite_Data/60Degree_500_12x24_tles.txt'
+  SOD_file_path: './Ground_Data/11_ground_stations.txt'
+  elevation_angle: 45
+  pole: false
+  
+  # ====================
+  # 卫星节点参数
+  # ====================
+  memory: 12000000000.0              # 12GB 内存
+  computing_ability: 50000000000.0   # 50 GFLOPS
+  transmission_rate: 1200000000.0    # 1.2 Gbps 星间链路
+  downlink_rate: 3000000000.0        # 3 Gbps 下行链路
+  downstream_delays: 0.0016667       # 下行延迟
+  mean_interval_time: 30
+  state_update_period: 0.1
+  
+  # ====================
+  # 动态拓扑参数
+  # ====================
+  del_cycle: 30                      # 链路删除周期
+  random_edges_del: 15               # 随机删除边数
+  random_nodes_del: 0                # 随机删除节点数
+  update_cycle: 10                   # 拓扑更新周期
+  n_hops: 2                          # GNN 邻居跳数（与 agent.n_hops 保持一致）
+  
+  # ====================
+  # 日志与可视化
+  # ====================
+  visualize: false
+  print_info: false
+  show_detail: false
+  save_log: false
+  save_training_data: 'train_GNN_DQN2hop_relational_gcn.txt'

@@ -1,0 +1,72 @@
+general:
+  phase: "train"
+  random_seed: 42
+  epsilon: 0.9
+  epsilon_decay: 0.9
+  min_epsilon: 0.02
+  begin_time: "2023-10-01 00:00:00"
+  time_stride: 1
+  rounds: 1
+  skip_time: !!python/tuple [60,0]  #60分钟 0秒
+  duration: 6000 #每轮仿真持续时间
+  reward_factors: !!python/tuple [1,0.05,1,0.1,0.25]
+  #奖励函数权重：reach_factor（1）：数据包成功到达目的地时的基础奖励权重,delay_factor(0.05):延迟对奖励的惩罚权重,loss_factor(1):数据包丢失时的惩罚权重，memory_threshold(0.1):内存剩余量的阈值,memory_factor(0.25):内存剩余量低于阈值时的惩罚权重
+  print_cycle: 10 #日志打印周期
+  select_mode: 1 # 选择目标地面站（模式1或传统模式下，选跳数最少的地面站）
+
+
+agent:
+  mode: "New_DQN"
+  neighbors_dim: 48
+  gat_output_dim: 16
+  edges_dim: 4
+  distance_dim: 4
+  mission_dim: 6
+  current_dim: 3
+  action_dim: 5
+  hidden_dim: 256
+  buffer_length: 500000
+  batch_size: 1024
+  gamma: 0.99 #折扣因子
+  q_mask: -1
+  activation: "LeakyRelu"
+  hidden_layers: 2
+  dueling: true
+  shuffle: false
+  learning_rate: 0.0002
+  repeat: 10
+  #一次 update() 可以训练多步,repeat 控制重复次数。
+  # 这样做的目的是提高每次采样的利用率。
+  update_cycle: 30
+  model_path: './model_weights/NewDDQN_dueling1217.pth'
+
+environment:
+  mission_possibility: [0.5, 0.5] # 随机选择任务类型（0或1，按mission_possibility概率）
+  #不同任务类型对应不同的计算需求（computing_demand_factor）和处理后的数据量（size_after_computing_factor）。例如，类型 0 可能需要更多计算资源，处理后的数据量更小；类型 1 可能计算需求低，但处理后的数据量更大。
+  poisson_rate: 30 # 数据包生成的泊松过程率（控制流量强度） 随机生成会话开始时间（服从指数分布，控制流量到达间隔）
+  packet_frequency: 0.5 # 按频率生成数据包
+  computing_demand_factor: [150, 250] #类型0 任务的计算需求系数
+  computing_demand_factor_2: [300, 500] #类型1 任务的计算需求系数
+  size_after_computing_factor: [0.08, 0.125]
+  size_after_computing_1: !!python/float 40e3
+  mean_interval_time: 30
+  memory: !!python/float 12e9
+  computing_ability: !!python/float 50e9
+  transmission_rate: !!python/float 1.2e9
+  downlink_rate: !!python/float 3e9
+  downstream_delays: 0.0016667
+  packet_size_range: [!!python/float 200e6, !!python/float 600e6]
+  state_update_period: 0.1
+  visualize: true
+  print_info: false
+  del_cycle: 30
+  save_log: false
+  show_detail: false
+  random_edges_del: 15
+  random_nodes_del: 0
+  elevation_angle: 45
+  update_cycle: 10
+  pole: false
+  tle_filepath: "./Satellite_Data/60Degree_500_12x24_tles.txt"
+  SOD_file_path: "./Ground_Data/11_ground_stations.txt"
+  save_training_data: "train_NewDDQN_dueling1217.txt"

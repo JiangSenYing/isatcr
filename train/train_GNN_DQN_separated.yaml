@@ -1,0 +1,157 @@
+# GNN-based DQN Training Configuration - 任务特征分离模式
+# 使用图神经网络进行卫星路由与计算决策
+#
+# ============================================================
+# 任务特征分离模式说明:
+# ============================================================
+# 在分离模式下，任务特征（mission_state + routing_info）不再混入图节点特征，
+# 而是作为独立的 task_context 传递给 Q 网络。
+#
+# 架构对比:
+#   混合模式:     agent[9] → GNN → Q-values
+#   分离模式:     agent[3] → GNN → env_embed ─┬─ Fusion → Q-values
+#                 task[6]  → MLP → task_embed ─┘
+#
+# 优势:
+#   1. 更清晰的语义分离（环境状态 vs 任务上下文）
+#   2. 任务特征可以更灵活地参与决策
+#   3. 更好的泛化能力（任务无关的环境表示）
+#
+# 支持的分离模式观测类型:
+#   - relational_separated: PyG 图 + task_context，使用 TaskConditionedRelationalController
+#   - graph_separated: PyG 图 + task_context，使用 TaskConditionedGraphController
+#
+# 使用方法:
+#   python PRC_GNN.py --config train/train_GNN_DQN_separated.yaml
+# ============================================================
+
+general:
+  random_seed: 42
+  phase: 'train'                     # 'train' or 'test'
+  begin_time: '2023-10-01 00:00:00'
+  time_stride: 1
+  rounds: 1
+  skip_time: [60, 0]                 # 每轮间隔 60 分钟
+  duration: 6000                     # 每轮持续时间（秒）
+  epsilon: 0.9                       # 初始探索率
+  min_epsilon: 0.02                  # 最终探索率
+  epsilon_decay: 0.999              # 探索率衰减系数
+  print_cycle: 10                    # 打印周期
+  select_mode: 1
+  reward_factors: [1, 0.05, 1, 0.1, 0.25]  # [reach, delay, loss, memory_threshold, memory_factor]
+
+agent:
+  # ====================
+  # 模式与观测类型 (分离模式配置)
+  # ====================
+  mode: 'GNN_DQN'
+  
+  # 观测类型（使用分离模式）:
+  #   - 'graph_separated': PyG 图 + task_context，使用消息传递 GNN + 任务编码器
+  #   - 'relational_separated': PyG 图 + task_context，使用 GAT + 任务编码器
+  obs_type: 'graph_separated'
+  
+  # 控制器类型（分离模式下自动匹配）:
+  #   - 'graph_separated': TaskConditionedGraphController
+  #   - 'relational_separated': TaskConditionedRelationalController
+  controller_type: 'graph_separated'
+  
+  # ====================
+  # 状态/观测维度配置 (分离模式)
+  # ====================
+  
+  # 智能体节点特征维度 (仅环境特征)
+  # 分离模式: [memory_remain, computing_remain, is_producing] = 3维
+  agent_feats: 3
+  
+  # 任务特征维度 (分离模式特有参数)
+  # task_context = mission_state(4) + routing_info(2) = 6维
+  # mission_state: [type, size_ratio, computing_demand_ratio, size_after_ratio]
+  # routing_info: [hop_to_dest, is_computed]
+  task_dim: 6
+  
+  # 邻居节点特征维度
+  nbr_feats: 4                       # [memory_remain, computing_remain, is_producing, hop_to_dest]
+  nbr_feats_relational: 12           # 邻居节点特征 (relational 模式): nbr_feats + edge_info
+  
+  # 边特征维度 (仅 graph 模式使用)
+  edge_feats: 3                      # [transmission_size, hop_distance, placeholder]
+  
+  # 动作空间
+  n_actions: 5                       # 动作数: 4 邻居 + 1 本地计算
+  max_nbrs: 4                        # 最大邻居数
+  
+  # ====================
+  # GNN 网络结构
+  # ====================
+  hidden_size: 64                    # 隐藏层维度
+  n_hops: 2                          # GNN 消息传递跳数 (1 或 2)
+  use_rnn: false                     # 是否使用 RNN 维护时序状态
+  dueling: true                      # 是否使用 Dueling DQN 架构
+  conv_type: 'gat'                   # GNN 卷积类型: 'gat' 或 'sage'
+  n_heads: 4                         # GAT 注意力头数
+  
+  # ====================
+  # 训练超参数
+  # ====================
+  buffer_size: 500000                # 经验回放缓冲区大小
+  batch_size: 512                    # 批量大小
+  gamma: 0.99                        # 折扣因子
+  learning_rate: 0.0002              # 学习率
+  target_update_freq: 50            # 目标网络更新频率
+  repeat: 10                         # 每次 update 重复训练次数
+  
+  # ====================
+  # 模型保存
+  # ====================
+  model_path: 'model_weights/gnn_ddqn_separated.pth'
+
+environment:
+  # ====================
+  # 任务生成参数
+  # ====================
+  mission_possibility: [0.5, 0.5]    # 任务类型概率
+  poisson_rate: 30
+  packet_frequency: 0.5
+  computing_demand_factor: [150, 250]
+  computing_demand_factor_2: [300, 500]
+  size_after_computing_factor: [0.08, 0.125]
+  size_after_computing_1: 40000.0
+  packet_size_range: [200000000.0, 600000000.0]  # [200MB, 600MB]
+  
+  # ====================
+  # 网络拓扑参数
+  # ====================
+  tle_filepath: './Satellite_Data/60Degree_500_12x24_tles.txt'
+  SOD_file_path: './Ground_Data/11_ground_stations.txt'
+  elevation_angle: 45
+  pole: false
+  
+  # ====================
+  # 卫星节点参数
+  # ====================
+  memory: 12000000000.0              # 12GB 内存
+  computing_ability: 50000000000.0   # 50 GFLOPS
+  transmission_rate: 1200000000.0    # 1.2 Gbps 星间链路
+  downlink_rate: 3000000000.0        # 3 Gbps 下行链路
+  downstream_delays: 0.0016667       # 下行延迟
+  mean_interval_time: 30
+  state_update_period: 0.1
+  
+  # ====================
+  # 动态拓扑参数
+  # ====================
+  del_cycle: 30                      # 链路删除周期
+  random_edges_del: 15               # 随机删除边数
+  random_nodes_del: 0                # 随机删除节点数
+  update_cycle: 10                   # 拓扑更新周期
+  n_hops: 2                          # GNN 邻居跳数（与 agent.n_hops 保持一致）
+  
+  # ====================
+  # 日志与可视化
+  # ====================
+  visualize: false
+  print_info: false
+  show_detail: false
+  save_log: false
+  save_training_data: 'train_GNN_DQN_separated.txt'
