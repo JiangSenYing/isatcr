@@ -68,7 +68,7 @@ environment:
   tle_filepath: 
     - "./Satellite_Data/60Degree_500_72x22_tles.txt"
     - "./Satellite_Data/60Degree_10000_10x10_tles.txt"
-  training_data_dir: './training_process_data/delayChange'
+  training_data_dir: './training_process_data/only_select_domain'
   SOD_file_path: './Ground_Data/11_ground_stations.txt'
   elevation_angle: 45
   pole: false
@@ -119,31 +119,36 @@ transformer:
     update_every: 1
     max_domain_hops: 100
     reward:
-      success_reward: 1.5
-      failure_penalty: 1.2
+      success_reward: 1.5 #1.5
+      failure_penalty: 1.5 #1.2
       unfinished_penalty: 0.0
       score_penalty: 0.0
-      domain_hop_penalty: 0.0
+      domain_hop_penalty: 0.02
       path_hop_penalty: 0.0
-      boundary_load_penalty: 0.0
-      boundary_delay_penalty: 0.05
-      terminal_reward_weight: 0.1
-      compute_penalty: 0.3
-      memory_penalty: 0.5
-      segment_success_reward: 0.8
+      boundary_load_penalty: 0.2
+      boundary_delay_penalty: 0.08 #0.05
+      terminal_reward_weight: 0.2 #0.1
+      progress_reward_weight: 0.2
+      terminal_credit_weight: 0.2
+      compute_penalty: 0.2 #0.3
+      memory_penalty: 0.5 #0.5
+      segment_success_reward: 1.0 #0.8
     model_path: 'model_weights/meo_domain_agent.pth'
     leo_policy:
-      enabled: true
-      model_path: model_weights/leo_attention_policy.pt
-      save_path: model_weights/leo_attention_policy.pt
-      train_enabled: true
+      enabled: false
+      model_path: model_weights/leo_attention_policy_v2.pt
+      save_path: model_weights/leo_attention_policy_v2.pt
+      train_enabled: false
       lr: 1e-4
       batch_size: 32
       buffer_size: 50000
       update_every: 1
       updates_per_step: 1
       loss_weight: 1.0
-      selection_enabled: true
+      selection_enabled: false
+      loss_gate_enabled: false
+      loss_gate_window_size: 20
+      loss_gate_threshold: 0.1
       unreachable_penalty: 2.0
       hop_penalty: 0.0
       delay_penalty: 0.1

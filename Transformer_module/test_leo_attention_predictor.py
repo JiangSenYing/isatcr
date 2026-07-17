@@ -50,12 +50,22 @@ def test_from_networkx_builds_batch():
     batch = from_networkx(
         _toy_graph(),
         source="A",
-        task_context={"task_type": 1, "packet_size": 2.0, "computing_demand": 3.0},
+        task_context={
+            "task_type": 1,
+            "packet_size": 0.2,
+            "computing_demand": 0.3,
+            "size_after_computing": 0.1,
+            "hops": 0.4,
+            "is_computed": 1,
+        },
     )
 
-    assert batch.node_features.shape == (1, 3, 7)
-    assert batch.edge_features.shape == (1, 3, 5)
+    assert batch.node_features.shape == (1, 3, 3)
+    assert batch.edge_features.shape == (1, 3, 6)
     assert batch.task_features.shape == (1, 6)
+    assert th.allclose(batch.node_features[0, 0], th.tensor([0.9, 0.8, 1.0]))
+    assert th.allclose(batch.task_features[0], th.tensor([1.0, 0.2, 0.3, 0.1, 0.4, 1.0]))
+    assert batch.edge_features[0, :, -1].tolist() == [2.0, 2.0, 2.0]
     assert batch.source_index.tolist() == [0]
     assert batch.neighbor_mask[0].tolist() == [False, True, True]
     assert batch.compute_mask[0].tolist() == [True, True, True]
@@ -66,6 +76,8 @@ def test_predictor_forward_shapes_and_masks():
     batch = from_networkx(graph, source="A")
     batch.compute_mask[0, 2] = False
     model = LEOAttentionDecisionPredictor(hidden_dim=32, num_layers=1, dropout=0.0)
+    assert model.node_proj[0].in_features == 3
+    assert model.edge_proj[0].in_features == 6
 
     outputs = model(batch)
 
@@ -158,7 +170,23 @@ def test_batch_from_networkx_pads_graphs():
         task_contexts=[th.ones(6), [0, 1, 2, 3, 0, 4]],
     )
 
-    assert batch.node_features.shape == (2, 3, 7)
-    assert batch.edge_features.shape == (2, 3, 5)
+    assert batch.node_features.shape == (2, 3, 3)
+    assert batch.edge_features.shape == (2, 3, 6)
     assert batch.node_mask[1].tolist() == [True, True, False]
     assert batch.edge_mask[1].tolist() == [True, False, False]
+
+
+def test_edge_destination_distances_are_sample_specific_and_do_not_mutate_graph():
+    graph = _toy_graph()
+    batch = batch_from_networkx(
+        [graph, graph],
+        sources=["A", "A"],
+        edge_target_distances=[
+            {("A", "B"): 0.2, ("A", "C"): 0.0, ("B", "C"): 0.0},
+            {("A", "B"): 0.8},
+        ],
+    )
+
+    assert th.allclose(batch.edge_features[0, :, -1], th.tensor([0.2, 0.0, 0.0]))
+    assert th.allclose(batch.edge_features[1, :, -1], th.tensor([0.8, 2.0, 2.0]))
+    assert all("destination_distance" not in attrs for _, _, attrs in graph.edges(data=True))

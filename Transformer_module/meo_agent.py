@@ -61,6 +61,10 @@ class MEODomainRoutingAgent:
         self.leo_policy_train_enabled = bool(leo_cfg.get("train_enabled", False))
         self.leo_policy_max_steps = max(1, int(leo_cfg.get("max_steps", 16)))
         self.leo_policy_selection_enabled = bool(leo_cfg.get("selection_enabled", True))
+        self.leo_loss_gate_enabled = bool(leo_cfg.get("loss_gate_enabled", False))
+        self.leo_loss_gate_window_size = max(1, int(leo_cfg.get("loss_gate_window_size", 20)))
+        self.leo_loss_gate_threshold = float(leo_cfg.get("loss_gate_threshold", 0.1))
+        self.leo_loss_history = deque(maxlen=self.leo_loss_gate_window_size)
         self.leo_unreachable_penalty = float(leo_cfg.get("unreachable_penalty", 10.0))
         self.leo_hop_penalty = float(leo_cfg.get("hop_penalty", 0.05))
         self.leo_delay_penalty = float(leo_cfg.get("delay_penalty", 0.05))
@@ -102,12 +106,8 @@ class MEODomainRoutingAgent:
         if not valid:
             return -1, float("-inf"), np.full(self.n_actions, -np.inf, dtype=np.float32)
         q_values = self.q_values(state, action_mask)
-        if (
-            leo_context is not None
-            and self.leo_policy_selection_enabled
-            and self.leo_policy_enabled
-            and self.leo_policy is not None
-        ):
+        leo_policy_ready = self.is_leo_policy_ready()
+        if leo_context is not None and leo_policy_ready:
             action, rollout, rollout_scores = self._select_action_with_leo_rollouts(q_values, valid, leo_context)
             self.last_leo_rollout = rollout
             self.last_leo_rollout_scores = rollout_scores
@@ -115,9 +115,28 @@ class MEODomainRoutingAgent:
             action = random.choice(valid)
         else:
             action = int(max(valid, key=lambda idx: q_values[idx]))
-        if leo_context is not None and self.last_leo_rollout is None:
+        if leo_context is not None and leo_policy_ready and self.last_leo_rollout is None:
             self.last_leo_rollout = self._run_leo_rollout(action, leo_context)
         return action, float(q_values[action]), q_values
+
+    @property
+    def leo_loss_window_average(self) -> Optional[float]:
+        if not self.leo_loss_history:
+            return None
+        return float(np.mean(self.leo_loss_history))
+
+    def is_leo_policy_ready(self) -> bool:
+        if not (
+            self.leo_policy_enabled
+            and self.leo_policy_selection_enabled
+            and self.leo_policy is not None
+        ):
+            return False
+        if not self.leo_loss_gate_enabled:
+            return True
+        if len(self.leo_loss_history) < self.leo_loss_gate_window_size:
+            return False
+        return self.leo_loss_window_average < self.leo_loss_gate_threshold
 
     def q_values(self, state: Sequence[float], action_mask: Optional[Sequence[bool]] = None) -> np.ndarray:
         state_tensor = torch.as_tensor(np.asarray(state, dtype=np.float32), dtype=torch.float32, device=self.device).view(1, -1)
@@ -134,15 +153,20 @@ class MEODomainRoutingAgent:
 
     def store_experience(self, state, action, reward, next_state, done, next_action_mask=None):
         if action is None or int(action) < 0:
-            return
-        self.replay_buffer.append((
+            return None
+        # Keep the established six-field replay interface, but use a mutable
+        # record so delayed packet-level credit can be added after a segment
+        # has already entered replay.
+        experience = [
             np.asarray(state, dtype=np.float32),
             int(action),
             float(reward),
             np.asarray(next_state, dtype=np.float32),
             bool(done),
             None if next_action_mask is None else np.asarray(next_action_mask, dtype=np.float32),
-        ))
+        ]
+        self.replay_buffer.append(experience)
+        return experience
 
     def update(self):
         if len(self.replay_buffer) < self.batch_size:
@@ -189,6 +213,8 @@ class MEODomainRoutingAgent:
         graph,
         source,
         task_context,
+        destination=None,
+        edge_target_distances=None,
         next_hop_target=None,
         compute_node_target=None,
     ) -> bool:
@@ -208,6 +234,8 @@ class MEODomainRoutingAgent:
             "graph": graph.copy() if hasattr(graph, "copy") else graph,
             "source": source,
             "task_context": dict(task_context or {}),
+            "destination": destination,
+            "edge_target_distances": dict(edge_target_distances or {}),
             "next_hop_target": next_hop_target,
             "compute_node_target": compute_node_target,
         })
@@ -231,6 +259,7 @@ class MEODomainRoutingAgent:
                 graphs=[item["graph"] for item in samples],
                 sources=[item["source"] for item in samples],
                 task_contexts=[item["task_context"] for item in samples],
+                edge_target_distances=[item["edge_target_distances"] for item in samples],
                 device=self.device,
             )
             next_targets = [item["next_hop_target"] for item in samples]
@@ -260,6 +289,8 @@ class MEODomainRoutingAgent:
         self.leo_train_steps += 1
         self.leo_policy.eval()
         self.last_leo_loss = float(np.mean(losses)) if losses else None
+        if self.last_leo_loss is not None:
+            self.leo_loss_history.append(self.last_leo_loss)
         return self.last_leo_loss
 
     def decay_epsilon(self) -> float:
@@ -286,6 +317,7 @@ class MEODomainRoutingAgent:
                 "model": self.leo_policy.state_dict(),
                 "optimizer": self.leo_optimizer.state_dict() if self.leo_optimizer is not None else None,
                 "train_steps": self.leo_train_steps,
+                "loss_history": list(self.leo_loss_history),
             }, self.leo_save_path)
 
     def load(self, path: str) -> bool:
@@ -309,11 +341,33 @@ class MEODomainRoutingAgent:
             return False
         checkpoint = torch.load(path, map_location=self.device)
         state_dict = checkpoint.get("model", checkpoint.get("state_dict", checkpoint)) if isinstance(checkpoint, dict) else checkpoint
-        self.leo_policy.load_state_dict(state_dict)
+        current_state = self.leo_policy.state_dict()
+        incompatible_keys = (
+            not isinstance(state_dict, Mapping)
+            or set(state_dict.keys()) != set(current_state.keys())
+            or any(
+                key not in current_state or tuple(value.shape) != tuple(current_state[key].shape)
+                for key, value in state_dict.items()
+            )
+        )
+        if incompatible_keys:
+            print(f"Warning: incompatible LEO policy checkpoint {path!r}; using a freshly initialized model.")
+            self.leo_policy.eval()
+            return False
+        try:
+            self.leo_policy.load_state_dict(state_dict)
+        except (RuntimeError, ValueError, KeyError) as exc:
+            print(f"Warning: incompatible LEO policy checkpoint {path!r}; using a freshly initialized model: {exc}")
+            self.leo_policy.eval()
+            return False
         if isinstance(checkpoint, dict):
             if self.leo_optimizer is not None and checkpoint.get("optimizer") is not None:
                 self.leo_optimizer.load_state_dict(checkpoint["optimizer"])
             self.leo_train_steps = int(checkpoint.get("train_steps", self.leo_train_steps))
+            restored_history = checkpoint.get("loss_history", []) or []
+            self.leo_loss_history.extend(float(value) for value in restored_history)
+            if self.leo_loss_history:
+                self.last_leo_loss = float(self.leo_loss_history[-1])
         self.leo_policy.eval()
         return True
 
@@ -363,6 +417,8 @@ class MEODomainRoutingAgent:
         src = context.get("src")
         next_domain = neighbors[action]
         target_node = self._candidate_exit(context.get("candidate_exits"), action, next_domain)
+        distance_maps = context.get("edge_target_distances", {}) or {}
+        edge_target_distances = distance_maps.get(next_domain, {}) if isinstance(distance_maps, Mapping) else {}
         if intra_graph is None or src is None or target_node is None:
             return None
         if src not in intra_graph or target_node not in intra_graph:
@@ -392,6 +448,7 @@ class MEODomainRoutingAgent:
                     source=current,
                     task_context=task,
                     device=self.device,
+                    edge_target_distances=edge_target_distances,
                 )
             except Exception as exc:
                 stopped_reason = f"prediction_error:{type(exc).__name__}"

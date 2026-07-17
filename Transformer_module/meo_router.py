@@ -25,6 +25,9 @@ class MEODomainRewardFunction:
         self.compute_penalty = float(cfg.get("compute_penalty", 0.1))
         self.memory_penalty = float(cfg.get("memory_penalty", 1.0))
         self.segment_success_reward = float(cfg.get("segment_success_reward", 0.2))
+        self.progress_reward_weight = float(cfg.get("progress_reward_weight", 0.0))
+        self.terminal_credit_weight = float(cfg.get("terminal_credit_weight", 0.0))
+        self.gamma = float(cfg.get("gamma", 0.97))
         # Keep this at 0 by default so the MEO agent does not reuse the LEO
         # packet reward value as its training target.
         self.terminal_reward_weight = float(cfg.get("terminal_reward_weight", 0.0))
@@ -38,26 +41,12 @@ class MEODomainRewardFunction:
         terminal_reward = float(terminal_reward)  # 将外部传入的包级终局 reward 转成浮点数，仅用于判断成败和可选加权。
         # compute_waiting_time = float(trace.get("computing_waiting_time", 0.0) or 0.0) if is_compute else 0.0  # 如果任务被计算，取出该任务累计计算等待时间；未计算时记为 0。
         # neighbor_compute_balance = self._neighbor_compute_balance_from_trace(trace)  # 从 MEO 状态向量中取出当前最多 4 个邻居域的算力均衡度。
-        meo_result = str(trace.get("meo_result", "") or "")  # 读取仿真环境显式写入的 MEO 相关任务终局类型。
-        reached_and_computed = meo_result == "reached_computed"  # 判断任务包是否成功到达且已经完成计算。
-        reached_without_compute = meo_result == "reached_uncomputed"  # 判断任务包是否成功到达但没有完成计算。
-        dropped_by_memory = meo_result == "memory_drop"  # 判断任务包是否因为内存/队列容量不足而丢包。
-        dropped_by_link = meo_result == "link_drop"  # 判断任务包是否因为链路、拓扑、节点失效、超时等问题丢失。
-
-        if not done:  # 如果这次决策还没有终止，就不给成功或失败奖励。
-            outcome_reward = -self.unfinished_penalty  # 未终止样本使用 unfinished_penalty 作为惩罚。
-        elif reached_and_computed:  # 如果任务成功到达且完成计算，按完整成功处理。
-            outcome_reward = self.success_reward # 成功时给 MEO 层自己的成功奖励。
-        elif reached_without_compute:  # 如果任务成功到达但没有计算，按到达成功但计算失败/未执行处理。
-            outcome_reward = self.success_reward - self.compute_penalty  # 先保留到达成功的基础奖励，后续可单独加入未计算惩罚。
-        elif dropped_by_memory:  # 如果任务因为内存或队列容量不足丢失，按失败处理。
-            outcome_reward = -self.failure_penalty - self.memory_penalty  # 内存不足丢包使用 MEO 层失败惩罚。
-        elif dropped_by_link:  # 如果任务因为链路、拓扑、节点失效或超时丢失，按失败处理。
-            outcome_reward = -self.failure_penalty  # 链路类丢包使用 MEO 层失败惩罚。
-        elif terminal_reward > 0.0:  # 如果没有显式结果但包级 reward 为正，兼容旧逻辑判断为成功。
-            outcome_reward = self.success_reward  # 旧数据或测试数据缺少 meo_result 时仍可得到成功奖励。
-        else:  # 如果已经终止且没有显式成功信息，认为结果失败或质量不可接受。
-            outcome_reward = -self.failure_penalty  # 失败时给 MEO 层自己的失败惩罚。
+        outcome_reward = self.terminal_outcome(
+            trace,
+            terminal_reward=terminal_reward,
+            done=done,
+            is_compute=is_compute,
+        )
             
         
         boundary_load = 0.0  # 初始化跨域边界链路平均负载，默认没有边界惩罚。
@@ -82,17 +71,44 @@ class MEODomainRewardFunction:
 
         return (  # 返回 MEO 层专用 reward，由结果项减去各类域间决策成本。
             outcome_reward  # 成功/失败/未终止带来的基础 MEO 层结果奖励。
-            + self.terminal_reward_weight * terminal_reward  # 可选地混入一小部分包级 reward，默认权重为 0。
             - self.score_penalty * score  # 惩罚 MEO 规划器评估出的路径风险/代价。
             - self.domain_hop_penalty * domain_hops  # 惩罚跨越过多 MEO 域，鼓励域级路径更短。
             - self.boundary_load_penalty * boundary_load  # 惩罚边界链路平均负载过高，避免拥塞跨域出口。
             - self.boundary_delay_penalty * delay_penalty_value  # 惩罚包从生成到接收/终止的端到端时延。
         )  # reward 计算结束。
 
+    def terminal_outcome(
+        self,
+        trace: Dict,
+        terminal_reward: float = 0.0,
+        done: bool = True,
+        is_compute: bool = False,
+    ) -> float:
+        """Return the packet-level outcome component without segment costs."""
+        del is_compute  # Kept for compatibility with the public reward call.
+        terminal_reward = float(terminal_reward)
+        meo_result = str(trace.get("meo_result", "") or "")
+        if not done:
+            outcome_reward = -self.unfinished_penalty
+        elif meo_result == "reached_computed":
+            outcome_reward = self.success_reward
+        elif meo_result == "reached_uncomputed":
+            outcome_reward = self.success_reward - self.compute_penalty
+        elif meo_result == "memory_drop":
+            outcome_reward = -self.failure_penalty - self.memory_penalty
+        elif meo_result == "link_drop":
+            outcome_reward = -self.failure_penalty
+        elif terminal_reward > 0.0:
+            outcome_reward = self.success_reward
+        else:
+            outcome_reward = -self.failure_penalty
+        return outcome_reward + self.terminal_reward_weight * terminal_reward
+
     def segment_reward(self, trace: Dict, current_time: Optional[float] = None) -> float:
         """Reward for reaching the next MEO-domain segment boundary."""
         domains = trace.get("domains", []) or []
         domain_hops = max(0, len(domains) - 1)
+        path_hops = max(0, len(trace.get("path", []) or []) - 1)
         boundary_load, boundary_delay = self._boundary_costs(trace.get("transitions", []) or [])
         decision_time = float(trace.get("decision_time", 0.0) or 0.0)
         if current_time is None:
@@ -101,9 +117,21 @@ class MEODomainRewardFunction:
             segment_delay = boundary_delay
         else:
             segment_delay = max(0.0, float(current_time) - decision_time)
+        distance_before = trace.get("distance_before")
+        distance_after = trace.get("distance_after")
+        progress_reward = 0.0
+        if distance_before is not None and distance_after is not None:
+            distance_before = float(distance_before)
+            distance_after = float(distance_after)
+            if np.isfinite(distance_before) and np.isfinite(distance_after):
+                phi_before = -distance_before
+                phi_after = -distance_after
+                progress_reward = self.gamma * phi_after - phi_before
         return (
             self.segment_success_reward
+            + self.progress_reward_weight * progress_reward
             - self.domain_hop_penalty * domain_hops
+            - self.path_hop_penalty * path_hops
             - self.boundary_load_penalty * boundary_load
             - self.boundary_delay_penalty * segment_delay
         )
@@ -134,7 +162,8 @@ class MEODomainRouter:
     def __init__(self, cfg: Optional[dict] = None, device: str = "cpu", transformer_enabled: bool = True):
         self.cfg = cfg or {}
         agent_cfg = self.cfg.get("meo_agent", {}) or {}
-        reward_cfg = agent_cfg.get("reward", self.cfg.get("meo_reward", {})) or {}
+        reward_cfg = dict(agent_cfg.get("reward", self.cfg.get("meo_reward", {})) or {})
+        reward_cfg.setdefault("gamma", float(agent_cfg.get("gamma", 0.97)))
         self.enabled = bool(self.cfg.get("meo_exit_enabled", False))
         self.transformer_enabled = bool(transformer_enabled)
         self.use_meo_aggregation = bool(self.cfg.get("use_meo_aggregation", True))
@@ -191,7 +220,7 @@ class MEODomainRouter:
             "is_computed": is_computed,
         }
         for sample_idx, future_graph in enumerate(future_graphs):
-            state, mask, neighbors, _ = build_meo_observation(
+            state, mask, neighbors, domain_distances = build_meo_observation(
                 meo_satellite=meo_satellite,
                 target_domain=target_domain,
                 use_meo_aggregation=self.use_meo_aggregation,
@@ -244,6 +273,8 @@ class MEODomainRouter:
                 "current_domain": source_domain,
                 "next_domain": next_domain,
                 "target_domain": target_domain,
+                "distance_before": self._domain_distance(graph, source_domain, target_domain),
+                "distance_after": domain_distances.get(next_domain),
                 "excluded_domains": list(excluded_domains or []),
                 "task_context": dict(task_context),
             }
@@ -253,6 +284,11 @@ class MEODomainRouter:
             return None
         _, best_plan = max(candidates, key=lambda item: item[0])
         best_plan["candidate_count"] = len(candidates)
+        best_plan["boundary_sat"] = self._target_boundary_satellites_for_direction(
+            graph,
+            best_plan["source_domain"],
+            best_plan["next_domain"],
+        )
         self.last_plan = best_plan
         self.decision_count += 1
         self.interval_decisions += 1
@@ -281,6 +317,8 @@ class MEODomainRouter:
             "computing_waiting_time": float(getattr(packet, "computing_waiting_time", 0.0) or 0.0),
             "meo_result": getattr(packet, "meo_result", None),
             "task_context": dict(policy.get("task_context", {})),
+            "distance_before": policy.get("distance_before"),
+            "distance_after": policy.get("distance_after"),
         }
         traces = getattr(packet, "meo_decision_traces", None)
         if traces is None:
@@ -296,8 +334,8 @@ class MEODomainRouter:
         if traces is None:
             trace = getattr(packet, "meo_decision_trace", None)
             traces = [trace] if trace else []
-        if not traces:
-            return
+        packet_info = getattr(packet, "information", None) or []
+        is_computed = bool(packet_info[0]) if packet_info else False
         for trace in traces:
             if not trace:
                 continue
@@ -308,10 +346,18 @@ class MEODomainRouter:
             self._attach_packet_compute_context(packet, trace)
             self._attach_packet_delay_context(packet, trace)
             trace["meo_result"] = meo_result or trace.get("meo_result") or getattr(packet, "meo_result", None)
-            packet_info = getattr(packet, "information", None) or []
-            is_computed = bool(packet_info[0]) if packet_info else False
             meo_reward = self.reward_function(trace, terminal_reward=reward, done=done, is_compute=is_computed)
             self._store_trace_experience(trace, meo_reward, done=done)
+        terminal_trace = {
+            "meo_result": meo_result or getattr(packet, "meo_result", None),
+        }
+        terminal_outcome = self.reward_function.terminal_outcome(
+            terminal_trace,
+            terminal_reward=reward,
+            done=done,
+            is_compute=is_computed,
+        )
+        self._apply_terminal_credit(packet, terminal_outcome)
         packet.meo_decision_traces = []
         packet.meo_decision_trace = None
 
@@ -340,13 +386,19 @@ class MEODomainRouter:
         if next_policy is not None:
             next_state = np.asarray(next_policy["state"], dtype=np.float32)
             next_action_mask = np.asarray(next_policy["action_mask"], dtype=np.float32)
-        self._store_trace_experience(
+        experience = self._store_trace_experience(
             trace,
             meo_reward,
             done=done,
             next_state=next_state,
             next_action_mask=next_action_mask,
         )
+        if experience is not None:
+            completed = getattr(packet, "meo_completed_experiences", None)
+            if completed is None:
+                completed = []
+                packet.meo_completed_experiences = completed
+            completed.append(experience)
         packet.meo_decision_trace = traces[-1] if traces else None
 
     def _store_trace_experience(self, trace, reward, done, next_state=None, next_action_mask=None):
@@ -355,7 +407,7 @@ class MEODomainRouter:
             next_state = np.zeros_like(state, dtype=np.float32)
         if next_action_mask is None:
             next_action_mask = np.zeros(self.max_neighbors, dtype=np.float32)
-        self.agent.store_experience(
+        experience = self.agent.store_experience(
             state=state,
             action=trace.get("action"),
             reward=float(reward),
@@ -365,6 +417,27 @@ class MEODomainRouter:
         )
         self.interval_rewards.append(float(reward))
         self.interval_experiences += 1
+        return experience
+
+    def _apply_terminal_credit(self, packet, terminal_outcome: float) -> None:
+        """Patch delayed packet-level credit into all completed segment records."""
+        if packet is None:
+            return
+        experiences = getattr(packet, "meo_completed_experiences", None) or []
+        bonus = self.reward_function.terminal_credit_weight * float(terminal_outcome)
+        for experience in experiences:
+            if isinstance(experience, list) and len(experience) >= 3:
+                experience[2] = float(experience[2]) + bonus
+        packet.meo_completed_experiences = []
+
+    @staticmethod
+    def _domain_distance(graph, source_domain, target_domain):
+        if graph is None or source_domain not in graph or target_domain not in graph:
+            return None
+        try:
+            return float(nx.shortest_path_length(graph, source_domain, target_domain))
+        except (nx.NetworkXNoPath, nx.NodeNotFound):
+            return None
 
     @staticmethod
     def _attach_packet_compute_context(packet, trace):
@@ -457,6 +530,9 @@ class MEODomainRouter:
             )
         leo_policy_loss = getattr(self.agent, "last_leo_loss", None)
         leo_policy_buffer = len(getattr(self.agent, "leo_replay_buffer", []))
+        leo_loss_window_avg = getattr(self.agent, "leo_loss_window_average", None)
+        leo_loss_window_count = len(getattr(self.agent, "leo_loss_history", []))
+        leo_policy_ready = self.agent.is_leo_policy_ready()
         return (
             f"{' | '.join(prefix_parts)}: "
             f"decisions={self.interval_decisions}, "
@@ -466,6 +542,9 @@ class MEODomainRouter:
             f"{loss_text}, "
             f"replay_buffer={len(self.agent.replay_buffer)}, "
             f"leo_policy_loss_latest={leo_policy_loss}, "
+            f"leo_policy_loss_window_avg={leo_loss_window_avg}, "
+            f"leo_policy_loss_window_count={leo_loss_window_count}, "
+            f"leo_policy_ready={leo_policy_ready}, "
             f"leo_policy_buffer={leo_policy_buffer}, "
             f"epsilon={self.agent.epsilon:.4f}"
         )
@@ -489,6 +568,7 @@ class MEODomainRouter:
         size_after_computing=0.0,
         is_computed=False,
         hops=0,
+        destination=None,
         next_hop_target=None,
         compute_node_target=None,
     ) -> bool:
@@ -499,18 +579,25 @@ class MEODomainRouter:
         graph = self._leo_training_graph(leo_satellite, domain)
         if graph is None:
             return False
-        task_context = {
+        task_context = self._normalize_leo_task_context(leo_satellite, {
             "task_type": task_type,
             "packet_size": packet_size,
             "computing_demand": computing_demand,
             "size_after_computing": size_after_computing,
             "is_computed": is_computed,
             "hops": hops,
-        }
+        })
+        edge_target_distances = self._edge_destination_distances(
+            leo_satellite,
+            graph,
+            destination,
+        )
         return self.agent.store_leo_experience(
             graph=graph,
             source=source,
             task_context=task_context,
+            destination=destination,
+            edge_target_distances=edge_target_distances,
             next_hop_target=next_hop_target,
             compute_node_target=compute_node_target,
         )
@@ -551,12 +638,19 @@ class MEODomainRouter:
     ):
         intra_graph = self._domain_intra_graph(graph, source_domain)
         candidate_exits = {}
+        edge_target_distances = {}
+        src_satellite = self._satellite_by_name(meo_satellite, src) or meo_satellite
         for neighbor in neighbors:
             if graph is None or source_domain not in graph or neighbor not in graph or not graph.has_edge(source_domain, neighbor):
                 candidate_exits[neighbor] = None
                 continue
             link = self._best_boundary_link(graph, source_domain, neighbor)
             candidate_exits[neighbor] = link.get("source_boundary") if link is not None else None
+            edge_target_distances[neighbor] = self._edge_destination_distances(
+                src_satellite,
+                intra_graph,
+                candidate_exits[neighbor],
+            )
         return {
             "graph": graph,
             "neighbors": list(neighbors),
@@ -564,10 +658,51 @@ class MEODomainRouter:
             "target_domain": target_domain,
             "src": src,
             "dst": dst,
-            "task_context": dict(task_context or {}),
+            "task_context": self._normalize_leo_task_context(src_satellite, task_context),
             "candidate_exits": candidate_exits,
             "intra_graph": intra_graph,
+            "edge_target_distances": edge_target_distances,
         }
+
+    @staticmethod
+    def _normalize_leo_task_context(satellite, task_context):
+        task_context = dict(task_context or {})
+        max_size = max(float(getattr(satellite, "max_size", 1.0) or 1.0), 1e-9)
+        computing_ability = max(float(getattr(satellite, "computing_ability", 1.0) or 1.0), 1e-9)
+        max_hop = max(float(getattr(satellite, "max_hop", 1.0) or 1.0), 1.0)
+        return {
+            "task_type": float(task_context.get("task_type", 0.0) or 0.0),
+            "packet_size": float(task_context.get("packet_size", 0.0) or 0.0) / max_size,
+            "computing_demand": float(task_context.get("computing_demand", 0.0) or 0.0) / computing_ability,
+            "size_after_computing": float(task_context.get("size_after_computing", 0.0) or 0.0) / max_size,
+            "hops": float(task_context.get("hops", 0.0) or 0.0) / max_hop,
+            "is_computed": float(bool(task_context.get("is_computed", False))),
+        }
+
+    @staticmethod
+    def _edge_destination_distances(reference_satellite, graph, target):
+        if graph is None:
+            return {}
+        propagator = getattr(reference_satellite, "propagator", None)
+        satellites = getattr(propagator, "satellites", {}) or {}
+        directions = list(graph.edges())
+        if not graph.is_directed():
+            directions.extend((dst, src) for src, dst in list(graph.edges()))
+        distances = {}
+        for src, dst in directions:
+            source_satellite = satellites.get(src)
+            max_hop = max(float(getattr(source_satellite, "max_hop", getattr(reference_satellite, "max_hop", 1.0)) or 1.0), 1.0)
+            distance = None
+            neighbor_hops = getattr(source_satellite, "neighbor_hops", {}) or {}
+            if target is not None:
+                distance = (neighbor_hops.get(dst, {}) or {}).get(target)
+            if distance is None and target in graph and dst in graph:
+                try:
+                    distance = nx.shortest_path_length(graph, dst, target)
+                except (nx.NetworkXNoPath, nx.NodeNotFound):
+                    distance = None
+            distances[(src, dst)] = float(distance) / max_hop if distance is not None else 2.0
+        return distances
 
     @staticmethod
     def _domain_intra_graph(graph, domain):
@@ -629,70 +764,52 @@ class MEODomainRouter:
             return False
         return int(hops) + 1 <= self.max_domain_hops
 
-    def _assemble_local_plan(self, meo_satellite, graph, current_domain, next_domain, target_domain, src, dst, packet_size):
-        if current_domain == next_domain or not graph.has_edge(current_domain, next_domain):
-            return None
-        link = self._best_boundary_link(graph, current_domain, next_domain)
-        if link is None:
-            return None
-        cost = float(link.get("quality_cost", 1.0))
-        link_load = float(link.get("link_load", 0.0) or 0.0)
-        link_load_ratio = self._link_load_ratio(meo_satellite, link_load)
-        transition = {
-            "from_domain": current_domain,
-            "to_domain": next_domain,
-            "source_boundary": link.get("source_boundary"),
-            "target_boundary": link.get("target_boundary"),
-            "quality_cost": cost,
-            "link_load": link_load,
-            "link_load_ratio": link_load_ratio,
-            "delay": float(link.get("delay", 0.0) or 0.0),
-        }
-        current_entry = src
-        current_exit = transition["source_boundary"]
-        next_entry = transition["target_boundary"]
-        next_exit = dst if next_domain == target_domain else None
-        if current_exit is None or next_entry is None:
-            return None
+    def _assemble_local_plan(self, meo_satellite, graph, current_domain, next_domain, target_domain, src, dst, packet_size):  # 根据当前域和策略选择的下一域，组装只包含一次跨域动作的局部路由计划。
+        if current_domain == next_domain or not graph.has_edge(current_domain, next_domain):  # 当前域与下一域相同或两域之间没有边时，无法执行有效的跨域转发。
+            return None  # 返回空值，表示本次局部路由计划组装失败。
+        link = self._best_boundary_link(graph, current_domain, next_domain)  # 从当前域到下一域的候选边界链路中选择质量最优的一条。
+        if link is None:  # 如果两个域之间不存在可用的边界链路，则无法继续构造计划。
+            return None  # 返回空值，让调用方跳过当前候选动作。
+        cost = float(link.get("quality_cost", 1.0))  # 读取边界链路的质量代价，字段缺失时默认使用 1.0。
+        link_load = float(link.get("link_load", 0.0) or 0.0)  # 读取边界链路当前负载，并将缺失值或 None 统一转换为 0.0。
+        link_load_ratio = self._link_load_ratio(meo_satellite, link_load)  # 根据卫星链路容量将绝对负载换算为归一化负载比例。
+        transition = {  # 构造本次从当前域跨越到下一域的边界跳转信息。
+            "from_domain": current_domain,  # 记录跨域跳转的起始 MEO 域。
+            "to_domain": next_domain,  # 记录跨域跳转的目标 MEO 域。
+            "source_boundary": link.get("source_boundary"),  # 记录当前域一侧负责离域的边界卫星节点。
+            "target_boundary": link.get("target_boundary"),  # 记录下一域一侧负责入域的边界卫星节点。
+            "quality_cost": cost,  # 保存所选边界链路的质量代价。
+            "link_load": link_load,  # 保存所选边界链路的绝对负载。
+            "link_load_ratio": link_load_ratio,  # 保存所选边界链路的归一化负载比例。
+            "delay": float(link.get("delay", 0.0) or 0.0),  # 保存边界链路延迟，字段缺失或为空时按 0.0 处理。
+        }  # 本次跨域跳转信息构造完成。
+        current_entry = src  # 当前域的域内路径从源卫星节点开始。
+        current_exit = transition["source_boundary"]  # 当前域的域内路径在所选源侧边界卫星处结束。
+        next_entry = transition["target_boundary"]  # 下一域的路径从所选目标侧边界卫星处开始。
+        next_exit = dst if next_domain == target_domain else None  # 若下一域就是目标域则出口为目的节点，否则暂不确定下一次离域出口。
+        if current_exit is None or next_entry is None:  # 任一侧边界节点缺失时，跨域链路无法形成完整连接。
+            return None  # 返回空值，避免生成包含无效边界节点的计划。
 
-        first_segment = self._intra_domain_path(meo_satellite, graph, current_domain, current_entry, current_exit)
-        if first_segment is None:
-            return None
-        satellite_path = list(first_segment)
-        if satellite_path and satellite_path[-1] == next_entry:
-            pass
-        else:
-            satellite_path.append(next_entry)
-
-        if next_domain == target_domain and next_entry != dst:
-            final_segment = self._intra_domain_path(meo_satellite, graph, next_domain, next_entry, dst)
-            if final_segment is not None:
-                if satellite_path[-1] == final_segment[0]:
-                    satellite_path.extend(final_segment[1:])
-                else:
-                    satellite_path.extend(final_segment)
-
-        domain_entries = {
-            current_domain: {"entry": current_entry, "exit": current_exit},
-            next_domain: {"entry": next_entry, "exit": next_exit},
-        }
-        env = getattr(meo_satellite, "env", None)
-        return {
-            "domains": [current_domain, next_domain],
-            "transitions": [transition],
-            "domain_entries": domain_entries,
-            "path": satellite_path,
-            "source": src,
-            "destination": dst,
-            "source_domain": current_domain,
-            "target_domain": target_domain,
-            "next_domain": next_domain,
-            "packet_size": float(packet_size or 0.0),
-            "score": float(cost),
-            "decision_time": float(getattr(env, "now", 0.0) if env is not None else 0.0),
-            "reachable": True,
-            "local_only": True,
-        }
+        domain_entries = {  # 记录本次局部计划涉及的两个域各自的入口和出口节点。
+            current_domain: {"entry": current_entry, "exit": current_exit},  # 当前域从源节点进入，并从源侧边界节点离开。
+            next_domain: {"entry": next_entry, "exit": next_exit},  # 下一域从目标侧边界节点进入，只有到达目标域时才明确出口为目的节点。
+        }  # 两个域的入口与出口映射构造完成。
+        env = getattr(meo_satellite, "env", None)  # 获取仿真环境对象，以便读取当前决策发生的仿真时间。
+        return {  # 返回供后续转发、策略记录和奖励计算使用的局部路由计划。
+            "domains": [current_domain, next_domain],  # 保存此次局部动作覆盖的当前域和下一域。
+            "transitions": [transition],  # 保存仅包含本次跨域动作的跳转记录列表。
+            "domain_entries": domain_entries,  # 保存各域对应的入口与出口卫星节点。
+            "source": src,  # 保存数据包的源卫星节点。
+            "destination": dst,  # 保存数据包的最终目的卫星节点。
+            "source_domain": current_domain,  # 保存本次局部计划开始时所在的 MEO 域。
+            "target_domain": target_domain,  # 保存数据包最终需要到达的目标 MEO 域。
+            "next_domain": next_domain,  # 保存 MEO 策略为本次动作选择的下一跳域。
+            "packet_size": float(packet_size or 0.0),  # 保存浮点格式的数据包大小，空值按 0.0 处理。
+            "score": float(cost),  # 以本次边界链路质量代价作为局部计划的风险或代价分数。
+            "decision_time": float(getattr(env, "now", 0.0) if env is not None else 0.0),  # 保存当前仿真时刻；环境不存在时使用 0.0。
+            "reachable": True,  # 标记该计划已经通过必要的边界链路和域内路径可达性检查。
+            "local_only": True,  # 标记该计划只描述当前域到下一域的一次局部跨域动作。
+        }  # 局部路由计划组装完成。
 
     def _assemble_plan(self, meo_satellite, graph, domain_path, src, dst, packet_size):
         transitions = []
@@ -805,6 +922,27 @@ class MEODomainRouter:
         return min(candidates, key=lambda item: float(item.get("quality_cost", 1.0)))
 
     @staticmethod
+    def _target_boundary_satellites_for_direction(graph, domain_a, domain_b):
+        if graph is None or not graph.has_edge(domain_a, domain_b):
+            return []
+        links = graph[domain_a][domain_b].get("boundary_links", {}) or {}
+        boundary_satellites = []
+        for link in links.values():
+            if not isinstance(link, dict):
+                continue
+            src_domain = link.get("source_domain")
+            dst_domain = link.get("target_domain")
+            if src_domain == domain_a and dst_domain == domain_b:
+                boundary_satellite = link.get("target_boundary")
+            elif src_domain == domain_b and dst_domain == domain_a:
+                boundary_satellite = link.get("source_boundary")
+            else:
+                continue
+            if boundary_satellite is not None and boundary_satellite not in boundary_satellites:
+                boundary_satellites.append(boundary_satellite)
+        return boundary_satellites
+
+    @staticmethod
     def _source_in_current_domain_graph(graph, meo_satellite, src):
         current_domain = getattr(meo_satellite, "name", None)
         if graph is None or current_domain not in graph:
@@ -826,3 +964,9 @@ class MEODomainRouter:
         if name == getattr(meo_satellite, "name", None):
             return name
         return None
+
+    @staticmethod
+    def _satellite_by_name(reference_satellite, name):
+        propagator = getattr(reference_satellite, "propagator", None)
+        satellites = getattr(propagator, "satellites", {}) or {}
+        return satellites.get(name)

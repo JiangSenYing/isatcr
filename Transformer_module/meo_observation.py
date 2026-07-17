@@ -92,10 +92,10 @@ def _aggregate_neighbor_features(graph, current_domain, neighbor, target_domain,
     aggregate = {}
     if graph is not None and neighbor in graph:
         aggregate = graph.nodes[neighbor].get("aggregate", {}) or {}
-    avg_mem = _float(aggregate.get("avg_memory_occupancy_rate", graph.nodes[neighbor].get("avg_memory_occupancy_rate", 0.0) if graph is not None and neighbor in graph else 0.0))
-    std_mem = _float(aggregate.get("std_memory_occupancy_rate", graph.nodes[neighbor].get("std_memory_occupancy_rate", graph.nodes[neighbor].get("max_memory_occupancy_rate", 0.0)) if graph is not None and neighbor in graph else 0.0))
-    avg_comp = _float(aggregate.get("avg_computing_occupancy_rate", graph.nodes[neighbor].get("avg_computing_occupancy_rate", 0.0) if graph is not None and neighbor in graph else 0.0))
-    std_comp = _float(aggregate.get("std_computing_occupancy_rate", graph.nodes[neighbor].get("std_computing_occupancy_rate", graph.nodes[neighbor].get("max_computing_occupancy_rate", 0.0)) if graph is not None and neighbor in graph else 0.0))
+    avg_mem = _float(aggregate.get("avg_memory_occupancy_rate", graph.nodes[neighbor].get("avg_memory_occupancy_rate", 1.0) if graph is not None and neighbor in graph else 0.0))
+    std_mem = _float(aggregate.get("std_memory_occupancy_rate", graph.nodes[neighbor].get("std_memory_occupancy_rate", graph.nodes[neighbor].get("max_memory_occupancy_rate", 1.0)) if graph is not None and neighbor in graph else 1.0))
+    avg_comp = _float(aggregate.get("avg_computing_occupancy_rate", graph.nodes[neighbor].get("avg_computing_occupancy_rate", 1.0) if graph is not None and neighbor in graph else 1.0))
+    std_comp = _float(aggregate.get("std_computing_occupancy_rate", graph.nodes[neighbor].get("std_computing_occupancy_rate", graph.nodes[neighbor].get("max_computing_occupancy_rate", 1.0)) if graph is not None and neighbor in graph else 1.0))
     source_boundary_delay, boundary_reachable = _source_to_neighbor_boundary_delay(graph, current_domain, neighbor, src)
     features = np.asarray([
         avg_mem,

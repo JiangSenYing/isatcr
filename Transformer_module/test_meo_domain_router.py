@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import networkx as nx
 import numpy as np
+import torch
 
 from Transformer_module import MEODomainRouter
 from Transformer_module.meo_agent import MEODomainRoutingAgent
@@ -77,8 +78,8 @@ class _FakeLEOPolicy:
             self.responses = dict(responses) if isinstance(responses, dict) else list(responses)
         self.calls = []
 
-    def predict(self, graph, source, task_context=None, device=None):
-        self.calls.append((source, dict(task_context or {})))
+    def predict(self, graph, source, task_context=None, device=None, **kwargs):
+        self.calls.append((source, dict(task_context or {}), dict(kwargs)))
         if callable(self.responses):
             return self.responses(graph, source, task_context or {})
         if isinstance(self.responses, dict) and source in self.responses:
@@ -111,10 +112,20 @@ def _meo_satellite():
     }.items():
         satellites[domain] = SimpleNamespace(name=domain, isLeo=False, masterMeo=domain)
         for leo in members:
-            satellites[leo] = SimpleNamespace(name=leo, isLeo=True, masterMeo=domain)
+            satellites[leo] = SimpleNamespace(
+                name=leo,
+                isLeo=True,
+                masterMeo=domain,
+                memory=10.0,
+                max_size=10.0,
+                computing_ability=10.0,
+                max_hop=10,
+                neighbor_hops={},
+            )
     propagator = SimpleNamespace(satellites=satellites, graph=nx.DiGraph())
     propagator.graph.add_nodes_from([name for name, sat in satellites.items() if getattr(sat, "isLeo", False)])
     propagator.graph.add_edges_from([("a0", "a1"), ("b0", "b1"), ("d0", "d1")])
+    satellites["a0"].neighbor_hops = {"a1": {"a1": 0, "c0": 2}}
     leo_states = {
         "a0": {"remaining_memory": 8.0, "remaining_computing": 7.0, "is_producing": 0, "neighbors": []},
         "a1": {"remaining_memory": 6.0, "remaining_computing": 5.0, "is_producing": 1, "neighbors": [{"name": "b0", "link_load": 1.0}]},
@@ -236,7 +247,55 @@ def test_meo_segment_reward_uses_segment_delay_instead_of_packet_delay():
         "packet_delay": 100.0,
     }
 
-    assert reward_fn.segment_reward(trace, current_time=7.0) == 0.2
+    assert np.isclose(reward_fn.segment_reward(trace, current_time=7.0), 0.2)
+
+
+def test_meo_segment_potential_reward_prefers_progress_without_congestion():
+    reward_fn = MEODomainRewardFunction({
+        "segment_success_reward": 0.0,
+        "progress_reward_weight": 0.2,
+        "gamma": 0.97,
+        "domain_hop_penalty": 0.0,
+        "path_hop_penalty": 0.0,
+        "boundary_load_penalty": 0.0,
+        "boundary_delay_penalty": 0.0,
+    })
+
+    closer = reward_fn.segment_reward({"distance_before": 3.0, "distance_after": 2.0})
+    farther = reward_fn.segment_reward({"distance_before": 3.0, "distance_after": 4.0})
+
+    assert np.isclose(closer, 0.2 * 1.06)
+    assert np.isclose(farther, 0.2 * -0.88)
+    assert closer > farther
+
+
+def test_meo_segment_congestion_cost_can_outweigh_distance_progress():
+    reward_fn = MEODomainRewardFunction({
+        "segment_success_reward": 0.0,
+        "progress_reward_weight": 0.2,
+        "gamma": 0.97,
+        "domain_hop_penalty": 0.0,
+        "path_hop_penalty": 0.0,
+        "boundary_load_penalty": 0.2,
+        "boundary_delay_penalty": 0.08,
+    })
+    congested_progress = {
+        "distance_before": 3.0,
+        "distance_after": 2.0,
+        "decision_time": 0.0,
+        "transitions": [{"link_load_ratio": 1.0}],
+    }
+    uncongested_detour = {
+        "distance_before": 3.0,
+        "distance_after": 4.0,
+        "decision_time": 0.0,
+        "transitions": [{"link_load_ratio": 0.0}],
+    }
+
+    congested_reward = reward_fn.segment_reward(congested_progress, current_time=10.0)
+    detour_reward = reward_fn.segment_reward(uncongested_detour, current_time=0.0)
+
+    assert detour_reward > congested_reward
 
 
 def test_meo_observation_includes_task_features_and_domain_compute_pressure():
@@ -379,6 +438,58 @@ def test_meo_router_excluded_domain_cannot_be_selected():
     assert plan["meo_policy"]["action_mask"].tolist()[:2] == [0.0, 1.0]
     assert plan["next_domain"] == "MEO_D"
     assert plan["domains"] == ["MEO_A", "MEO_D"]
+    assert plan["boundary_sat"] == ["d0"]
+
+
+def test_boundary_satellites_include_all_next_domain_candidates():
+    graph = nx.Graph()
+    graph.add_edge("MEO_A", "MEO_B", boundary_links={
+        ("a1", "b0"): {
+            "source_domain": "MEO_A",
+            "target_domain": "MEO_B",
+            "source_boundary": "a1",
+            "target_boundary": "b0",
+        },
+        ("a2", "b1"): {
+            "source_domain": "MEO_A",
+            "target_domain": "MEO_B",
+            "source_boundary": "a2",
+            "target_boundary": "b1",
+        },
+        ("a3", "b0"): {
+            "source_domain": "MEO_A",
+            "target_domain": "MEO_B",
+            "source_boundary": "a3",
+            "target_boundary": "b0",
+        },
+        ("a4", None): {
+            "source_domain": "MEO_A",
+            "target_domain": "MEO_B",
+            "source_boundary": "a4",
+            "target_boundary": None,
+        },
+        "invalid": None,
+    })
+
+    result = MEODomainRouter._target_boundary_satellites_for_direction(graph, "MEO_A", "MEO_B")
+
+    assert result == ["b0", "b1"]
+
+
+def test_boundary_satellites_reverse_stored_link_direction():
+    graph = nx.Graph()
+    graph.add_edge("MEO_A", "MEO_B", boundary_links={
+        ("b0", "a1"): {
+            "source_domain": "MEO_B",
+            "target_domain": "MEO_A",
+            "source_boundary": "b0",
+            "target_boundary": "a1",
+        },
+    })
+
+    result = MEODomainRouter._target_boundary_satellites_for_direction(graph, "MEO_A", "MEO_B")
+
+    assert result == ["b0"]
 
 
 def test_meo_router_does_not_select_unreachable_boundary_link():
@@ -579,6 +690,136 @@ def test_meo_agent_leo_rollout_computes_then_forwards_to_exit():
     assert rollout["final_task_context"]["packet_size"] == 2.0
 
 
+def test_meo_agent_leo_loss_gate_requires_full_window_and_strict_threshold():
+    agent = MEODomainRoutingAgent(
+        state_dim=3,
+        cfg={
+            "n_actions": 4,
+            "epsilon": 0.0,
+            "leo_policy": {
+                "enabled": True,
+                "selection_enabled": True,
+                "loss_gate_enabled": True,
+                "loss_gate_window_size": 3,
+                "loss_gate_threshold": 0.1,
+            },
+        },
+        device="cpu",
+    )
+
+    agent.leo_loss_history.extend([0.01, 0.01])
+    assert agent.is_leo_policy_ready() is False
+
+    agent.leo_loss_history.append(0.28)
+    assert abs(agent.leo_loss_window_average - 0.1) < 1e-12
+    assert agent.is_leo_policy_ready() is False
+
+    agent.leo_loss_history.append(0.0)
+    assert agent.leo_loss_window_average < 0.1
+    assert agent.is_leo_policy_ready() is True
+
+    agent.leo_loss_history.append(0.3)
+    assert agent.is_leo_policy_ready() is False
+
+
+def test_meo_agent_loss_gate_blocks_all_leo_rollouts_until_ready():
+    agent = MEODomainRoutingAgent(
+        state_dim=3,
+        cfg={
+            "n_actions": 4,
+            "epsilon": 0.0,
+            "leo_policy": {
+                "enabled": True,
+                "selection_enabled": True,
+                "loss_gate_enabled": True,
+                "loss_gate_window_size": 2,
+                "loss_gate_threshold": 0.1,
+                "unreachable_penalty": 10.0,
+            },
+        },
+        device="cpu",
+    )
+    _force_meo_action(agent, 0)
+    graph = nx.DiGraph()
+    graph.add_nodes_from(["A", "B", "C"])
+    graph.add_edge("A", "B")
+    agent.leo_policy = _FakeLEOPolicy({"A": {"next_hop": "B", "compute_node": None}})
+    context = {
+        "neighbors": ["MEO_BAD", "MEO_GOOD"],
+        "src": "A",
+        "task_context": {"is_computed": True},
+        "candidate_exits": {"MEO_BAD": "C", "MEO_GOOD": "B"},
+        "intra_graph": graph,
+    }
+
+    action, _, _ = agent.act(
+        [0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0], explore=False, leo_context=context
+    )
+    assert action == 0
+    assert agent.last_leo_rollout is None
+    assert agent.last_leo_rollout_scores is None
+
+    agent.leo_loss_history.extend([0.05, 0.05])
+    action, _, _ = agent.act(
+        [0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0], explore=False, leo_context=context
+    )
+    assert action == 1
+    assert agent.last_leo_rollout["reached_target"] is True
+
+
+def test_meo_agent_leo_loss_history_round_trips_through_checkpoint(tmp_path):
+    leo_path = tmp_path / "leo_policy.pt"
+    cfg = {
+        "leo_policy": {
+            "enabled": True,
+            "selection_enabled": True,
+            "loss_gate_enabled": True,
+            "loss_gate_window_size": 3,
+            "loss_gate_threshold": 0.1,
+            "save_path": str(leo_path),
+            "hidden_dim": 16,
+            "num_layers": 1,
+        }
+    }
+    agent = MEODomainRoutingAgent(state_dim=3, cfg=cfg, device="cpu")
+    agent.leo_loss_history.extend([0.04, 0.05, 0.06])
+    agent.save(str(tmp_path / "meo_agent.pt"))
+
+    load_cfg = {"leo_policy": {**cfg["leo_policy"], "model_path": str(leo_path)}}
+    restored = MEODomainRoutingAgent(state_dim=3, cfg=load_cfg, device="cpu")
+
+    assert list(restored.leo_loss_history) == [0.04, 0.05, 0.06]
+    assert restored.last_leo_loss == 0.06
+    assert restored.is_leo_policy_ready() is True
+
+
+def test_meo_agent_ignores_incompatible_old_leo_checkpoint(tmp_path):
+    checkpoint_path = tmp_path / "old_leo_policy.pt"
+    original = MEODomainRoutingAgent(
+        state_dim=3,
+        cfg={"leo_policy": {"enabled": True, "hidden_dim": 16, "num_layers": 1}},
+        device="cpu",
+    )
+    old_state = original.leo_policy.state_dict()
+    old_state["node_proj.0.weight"] = torch.zeros((16, 7))
+    torch.save({"model": old_state}, checkpoint_path)
+
+    restored = MEODomainRoutingAgent(
+        state_dim=3,
+        cfg={
+            "leo_policy": {
+                "enabled": True,
+                "hidden_dim": 16,
+                "num_layers": 1,
+                "model_path": str(checkpoint_path),
+            }
+        },
+        device="cpu",
+    )
+
+    assert restored.leo_policy.node_proj[0].weight.shape == (16, 3)
+
+
 def test_meo_agent_leo_rollouts_can_change_meo_action_selection():
     agent = MEODomainRoutingAgent(
         state_dim=3,
@@ -708,6 +949,10 @@ def test_meo_router_recommend_path_writes_leo_rollout_into_plan():
     assert plan["path"][:3] == ["a0", "a1", "b0"]
     assert plan["compute_flags"][:2] == [1, 0]
     assert plan["computing_leo"] == "a0"
+    first_call = router.agent.leo_policy.calls[0]
+    assert first_call[1]["packet_size"] == 1.0
+    assert first_call[1]["computing_demand"] == 0.3
+    assert first_call[2]["edge_target_distances"][("a0", "a1")] == 0.0
 
 
 def test_meo_router_store_leo_policy_experience_for_forward_and_compute():
@@ -739,6 +984,7 @@ def test_meo_router_store_leo_policy_experience_for_forward_and_compute():
         size_after_computing=1.0,
         is_computed=False,
         hops=1,
+        destination="c0",
         next_hop_target="a1",
     )
     assert router.store_leo_policy_experience(
@@ -749,12 +995,24 @@ def test_meo_router_store_leo_policy_experience_for_forward_and_compute():
         size_after_computing=1.0,
         is_computed=False,
         hops=1,
+        destination="c0",
         compute_node_target="a0",
     )
 
     assert len(router.agent.leo_replay_buffer) == 2
     assert router.agent.leo_replay_buffer[0]["next_hop_target"] == "a1"
     assert router.agent.leo_replay_buffer[1]["compute_node_target"] == "a0"
+    assert router.agent.leo_replay_buffer[0]["destination"] == "c0"
+    assert router.agent.leo_replay_buffer[1]["destination"] == "c0"
+    assert router.agent.leo_replay_buffer[0]["task_context"] == {
+        "task_type": 1.0,
+        "packet_size": 0.2,
+        "computing_demand": 0.3,
+        "size_after_computing": 0.1,
+        "hops": 0.1,
+        "is_computed": 0.0,
+    }
+    assert router.agent.leo_replay_buffer[0]["edge_target_distances"][("a0", "a1")] == 0.2
 
 
 def test_meo_agent_update_leo_policy_produces_loss():
@@ -785,6 +1043,7 @@ def test_meo_agent_update_leo_policy_produces_loss():
 
     assert loss is not None
     assert router.agent.last_leo_loss == loss
+    assert list(router.agent.leo_loss_history) == [loss]
     assert router.agent.last_leo_losses["loss"] > 0.0
 
 
@@ -866,6 +1125,99 @@ def test_meo_router_finish_segment_without_next_plan_is_terminal():
     assert np.allclose(stored[3], np.zeros_like(stored[0]))
     assert packet.meo_decision_traces == []
     assert packet.meo_decision_trace is None
+
+
+def test_meo_router_terminal_success_adds_credit_to_all_completed_segments_once():
+    router = MEODomainRouter({
+        "meo_exit_enabled": True,
+        "use_meo_aggregation": True,
+        "meo_agent": {
+            "epsilon": 0.0,
+            "batch_size": 1,
+            "buffer_size": 10,
+            "reward": {
+                "segment_success_reward": 0.5,
+                "terminal_credit_weight": 0.2,
+                "terminal_reward_weight": 0.0,
+                "success_reward": 1.5,
+                "domain_hop_penalty": 0.0,
+                "boundary_load_penalty": 0.0,
+                "boundary_delay_penalty": 0.0,
+            },
+        },
+    }, device="cpu", transformer_enabled=False)
+    meo = _meo_satellite()
+    plan = router.recommend_path(meo, "a0", "c0", packet_size=1.0)
+    next_plan = {
+        "meo_policy": {
+            "state": np.ones(meo_state_dim(True), dtype=np.float32),
+            "action_mask": np.asarray([1.0, 0.0, 0.0, 0.0], dtype=np.float32),
+        }
+    }
+    packet = SimpleNamespace(
+        meo_decision_trace=None,
+        meo_decision_traces=[],
+        meo_segment_time=0.0,
+        information=[True],
+    )
+
+    router.attach_decision(packet, plan)
+    router.finish_segment(packet, next_plan=next_plan, reached_node="b0")
+    stored = router.agent.replay_buffer[0]
+    original_reward = stored[2]
+
+    router.finish_decision(packet, reward=1.0, done=True, meo_result="reached_computed")
+
+    assert isinstance(stored, list)
+    assert np.isclose(stored[2], original_reward + 0.2 * 1.5)
+    assert packet.meo_completed_experiences == []
+
+    router.finish_decision(packet, reward=1.0, done=True, meo_result="reached_computed")
+    assert np.isclose(stored[2], original_reward + 0.2 * 1.5)
+
+
+def test_meo_router_terminal_failure_adds_negative_credit_to_completed_segments():
+    router = MEODomainRouter({
+        "meo_exit_enabled": True,
+        "use_meo_aggregation": True,
+        "meo_agent": {
+            "epsilon": 0.0,
+            "batch_size": 1,
+            "buffer_size": 10,
+            "reward": {
+                "segment_success_reward": 0.5,
+                "terminal_credit_weight": 0.2,
+                "terminal_reward_weight": 0.0,
+                "failure_penalty": 1.5,
+                "domain_hop_penalty": 0.0,
+                "boundary_load_penalty": 0.0,
+                "boundary_delay_penalty": 0.0,
+            },
+        },
+    }, device="cpu", transformer_enabled=False)
+    meo = _meo_satellite()
+    plan = router.recommend_path(meo, "a0", "c0", packet_size=1.0)
+    next_plan = {
+        "meo_policy": {
+            "state": np.ones(meo_state_dim(True), dtype=np.float32),
+            "action_mask": np.asarray([1.0, 0.0, 0.0, 0.0], dtype=np.float32),
+        }
+    }
+    packet = SimpleNamespace(
+        meo_decision_trace=None,
+        meo_decision_traces=[],
+        meo_segment_time=0.0,
+        information=[False],
+    )
+
+    router.attach_decision(packet, plan)
+    router.finish_segment(packet, next_plan=next_plan, reached_node="b0")
+    stored = router.agent.replay_buffer[0]
+    original_reward = stored[2]
+
+    router.finish_decision(packet, reward=-1.0, done=True, meo_result="link_drop")
+
+    assert np.isclose(stored[2], original_reward - 0.2 * 1.5)
 
 
 def test_meo_agent_epsilon_decays_after_successful_update():

@@ -17,13 +17,9 @@ import torch.nn.functional as F
 
 
 NODE_FEATURE_KEYS = (
-    "remaining_memory",
-    "remaining_computing",
-    "memory_occupancy_rate",
-    "computing_occupancy_rate",
+    "remaining_memory_ratio",
+    "remaining_computing_ratio",
     "is_producing",
-    "compute_queue",
-    "business_time",
 )
 EDGE_FEATURE_KEYS = (
     "delay",
@@ -31,14 +27,15 @@ EDGE_FEATURE_KEYS = (
     "link_queue",
     "weight",
     "target_compute_remain",
+    "destination_distance",
 )
 TASK_FEATURE_KEYS = (
     "task_type",
     "packet_size",
     "computing_demand",
     "size_after_computing",
-    "is_computed",
     "hops",
+    "is_computed",
 )
 
 
@@ -340,6 +337,7 @@ def from_networkx(
     graph: nx.Graph,
     source: Union[str, int],
     task_context: Optional[Union[Mapping[str, float], Sequence[float], np.ndarray, th.Tensor]] = None,
+    edge_target_distances: Optional[Mapping[Tuple[str, str], float]] = None,
     node_names: Optional[Sequence[str]] = None,
     node_feature_scales: Optional[Mapping[str, float]] = None,
     edge_feature_scales: Optional[Mapping[str, float]] = None,
@@ -354,6 +352,7 @@ def from_networkx(
         [graph],
         sources=[source],
         task_contexts=[task_context],
+        edge_target_distances=[edge_target_distances],
         node_names=[node_names] if node_names is not None else None,
         node_feature_scales=node_feature_scales,
         edge_feature_scales=edge_feature_scales,
@@ -369,6 +368,7 @@ def batch_from_networkx(
     graphs: Sequence[nx.Graph],
     sources: Sequence[Union[str, int]],
     task_contexts: Optional[Sequence[Optional[Union[Mapping[str, float], Sequence[float], np.ndarray, th.Tensor]]]] = None,
+    edge_target_distances: Optional[Sequence[Optional[Mapping[Tuple[str, str], float]]]] = None,
     node_names: Optional[Sequence[Optional[Sequence[str]]]] = None,
     node_feature_scales: Optional[Mapping[str, float]] = None,
     edge_feature_scales: Optional[Mapping[str, float]] = None,
@@ -384,6 +384,9 @@ def batch_from_networkx(
     task_contexts = task_contexts or [None] * len(graphs)
     if len(task_contexts) != len(graphs):
         raise ValueError("task_contexts must match graphs length when provided.")
+    edge_target_distances = edge_target_distances or [None] * len(graphs)
+    if len(edge_target_distances) != len(graphs):
+        raise ValueError("edge_target_distances must match graphs length when provided.")
 
     graph_items = []
     max_nodes = 1
@@ -399,14 +402,19 @@ def batch_from_networkx(
             for name in names
         ]
         edges, edge_rows = [], []
+        distance_lookup = edge_target_distances[graph_idx] or {}
         for src, dst, attrs in graph.edges(data=True):
             if src not in name_to_idx or dst not in name_to_idx:
                 continue
+            edge_attrs = dict(attrs)
+            edge_attrs["destination_distance"] = distance_lookup.get((src, dst), 2.0)
             edges.append((name_to_idx[src], name_to_idx[dst]))
-            edge_rows.append(_edge_feature_row(attrs, edge_feature_keys, edge_feature_scales))
+            edge_rows.append(_edge_feature_row(edge_attrs, edge_feature_keys, edge_feature_scales))
             if not graph.is_directed():
+                reverse_attrs = dict(attrs)
+                reverse_attrs["destination_distance"] = distance_lookup.get((dst, src), 2.0)
                 edges.append((name_to_idx[dst], name_to_idx[src]))
-                edge_rows.append(_edge_feature_row(attrs, edge_feature_keys, edge_feature_scales))
+                edge_rows.append(_edge_feature_row(reverse_attrs, edge_feature_keys, edge_feature_scales))
         neighbor_mask = np.zeros(len(names), dtype=np.bool_)
         if names[source_idx] in graph:
             for neighbor in graph.neighbors(names[source_idx]):
@@ -519,10 +527,26 @@ def _node_feature_row(
     feature_keys: Sequence[str],
     scales: Optional[Mapping[str, float]],
 ) -> np.ndarray:
-    return np.asarray([
-        _scaled_value(_attr_with_aliases(attrs, key, _node_aliases(key)), key, scales)
-        for key in feature_keys
-    ], dtype=np.float32)
+    values = []
+    for key in feature_keys:
+        if key == "remaining_memory_ratio":
+            value = _remaining_ratio(attrs, key, "memory_occupancy_rate")
+        elif key == "remaining_computing_ratio":
+            value = _remaining_ratio(attrs, key, "computing_occupancy_rate")
+        else:
+            value = _scaled_value(_attr_with_aliases(attrs, key, _node_aliases(key)), key, scales)
+        values.append(value)
+    return np.asarray(values, dtype=np.float32)
+
+
+def _remaining_ratio(attrs: Mapping[str, object], ratio_key: str, occupancy_key: str) -> float:
+    if ratio_key in attrs:
+        value = _float(attrs.get(ratio_key))
+    elif occupancy_key in attrs:
+        value = 1.0 - _float(attrs.get(occupancy_key))
+    else:
+        value = 0.0
+    return float(np.clip(value, 0.0, 1.0))
 
 
 def _edge_feature_row(

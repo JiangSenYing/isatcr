@@ -860,6 +860,8 @@ class Satellite_with_Computing(Satellite):
                 computing_capacity = float(getattr(sat, 'computing_ability', self.computing_ability) or self.computing_ability or 1.0)  # 获取该 LEO 的总计算能力，缺失时用当前对象配置兜底。
                 memory_occupancy_rate = self._clip01(1.0 - remaining_memory / max(memory_capacity, 1e-9))  # 用剩余存储计算存储占用率，并限制在 0 到 1。
                 computing_occupancy_rate = self._clip01(1.0 - remaining_computing / max(computing_capacity, 1e-9))  # 用剩余计算资源计算计算占用率，并限制在 0 到 1。
+                remaining_memory_ratio = self._clip01(remaining_memory / max(memory_capacity, 1e-9))
+                remaining_computing_ratio = self._clip01(remaining_computing / max(computing_capacity, 1e-9))
                 memory_rates.append(memory_occupancy_rate)  # 把该 LEO 的存储占用率加入统计列表。
                 compute_rates.append(computing_occupancy_rate)  # 把该 LEO 的计算占用率加入统计列表。
                 intra_graph.add_node(  # 将该 LEO 加入域内图，节点属性保存它的资源状态。
@@ -868,6 +870,8 @@ class Satellite_with_Computing(Satellite):
                     is_producing=int(bool(state.get('is_producing', 0))),  # 保存该 LEO 是否正在产生任务，并转换成 0/1。
                     remaining_memory=remaining_memory,  # 保存该 LEO 当前剩余的存储资源。
                     remaining_computing=remaining_computing,  # 保存该 LEO 当前剩余的计算资源。
+                    remaining_memory_ratio=remaining_memory_ratio,
+                    remaining_computing_ratio=remaining_computing_ratio,
                     memory_occupancy_rate=memory_occupancy_rate,  #保存该 LEO 的存储占用率。
                     computing_occupancy_rate=computing_occupancy_rate,  # 保存该 LEO 的计算占用率。
                 )  # 完成该 LEO 节点及其属性的添加。
@@ -3597,6 +3601,7 @@ class Satellite_with_Computing(Satellite):
         size_after_computing=0.0,
         is_computed=False,
         hops=0,
+        destination=None,
         next_hop_target=None,
         compute_node_target=None,
     ):
@@ -3611,11 +3616,12 @@ class Satellite_with_Computing(Satellite):
             size_after_computing=size_after_computing,
             is_computed=is_computed,
             hops=hops,
+            destination=destination,
             next_hop_target=next_hop_target,
             compute_node_target=compute_node_target,
         )
    
-    def get_next_hop(self, obs, destination, is_computed, task_context=None, task_edge_feats=None):
+    def get_next_hop(self, obs, destination, is_computed, task_context=None, task_edge_feats=None, return_score=False):
         """
         根据观测 obs 选择下一跳动作
         
@@ -3627,8 +3633,38 @@ class Satellite_with_Computing(Satellite):
             task_edge_feats: 任务边特征（分离模式下需要），dict {'1hop': tensor}
         
         Returns:
-            动作索引（DQN）或 [动作索引, log_prob]（PPO）
+            默认返回动作索引（DQN）或 [动作索引, log_prob]（PPO）。
+            return_score=True 时返回 (动作结果, 所选动作得分)。
         """
+        def dqn_output():
+            with torch.no_grad():
+                if self.propagator.obs_type in ('relational_separated', 'graph_separated'):
+                    model_obs = obs.to(self.device)
+                    model_task_context = task_context
+                    if model_task_context is not None:
+                        if not isinstance(model_task_context, torch.Tensor):
+                            model_task_context = torch.tensor(model_task_context, dtype=torch.float)
+                        model_task_context = model_task_context.to(self.device)
+                    output, _ = self.q_net(model_obs, model_task_context, None, task_edge_feats)
+                elif self.propagator.obs_type in ('relational', 'graph'):
+                    model_obs = obs.to(self.device)
+                    output, _ = self.q_net(model_obs, None)
+                else:
+                    obs_tensor = torch.tensor(obs, dtype=torch.float).unsqueeze(0).to(self.device)
+                    output = self.q_net(obs_tensor)
+            return output.squeeze(0)
+
+        def dqn_action_score(output, action_index):
+            if action_index < 0 or action_index >= output.size(-1):
+                return float('-inf')
+            if self.leo_action_mask_enabled:
+                if action_index not in self._leo_valid_actions(is_computed, output.size(-1)):
+                    return float('-inf')
+                output = self._mask_leo_action_scores(output, is_computed)
+            elif is_computed and action_index >= 4:
+                return float('-inf')
+            return float(output[action_index].item())
+
         if 'DQN' in self.mode:
             if np.random.rand() <= self.epsilon:#以ε的概率随机选择动作，具体分两种子策略（各 50% 概率）
                 if np.random.rand() <= 0.5:#完全随机选择：
@@ -3667,40 +3703,20 @@ class Satellite_with_Computing(Satellite):
                     else:
                         min_value = min(neighbor_distances)
                         next_index = np.random.choice([index for index, value in enumerate(neighbor_distances) if value == min_value])
-                return next_index
+                if return_score:
+                    exploration_output = dqn_output()
+                    return int(next_index), dqn_action_score(exploration_output, int(next_index))
+                return int(next_index)
             else:#以1-ε的概率通过 Q 网络选择最优动作
                 
                 # === 原方法：直接使用 q_net ===
                 # 根据 obs_type 处理观测
-                with torch.no_grad():
-                    if self.propagator.obs_type in ('relational_separated', 'graph_separated'):
-                        # 分离模式：obs 是 PyG 图，需要额外的 task_context 和 task_edge_feats
-                        obs = obs.to(self.device)
-                        if task_context is not None:
-                            if not isinstance(task_context, torch.Tensor):
-                                task_context = torch.tensor(task_context, dtype=torch.float)
-                            task_context = task_context.to(self.device)
-                        main_output, _ = self.q_net(obs, task_context, None, task_edge_feats)
-                        # 参数1: 观测图
-                        # 参数2: 任务上下文
-                        # 参数3: RNN隐藏状态
-                        # 参数4: 任务边特征
-
-                    elif self.propagator.obs_type in ('relational', 'graph'):
-                        # 图模式：obs 是 PyG 图，直接传给 q_net
-                        # GNN controller 返回 (q_vals, hidden_state) 元组
-                        obs = obs.to(self.device)
-                        main_output, _ = self.q_net(obs, None)
-                    else:
-                        # 扁平模式：obs 是状态向量
-                        obs_tensor = torch.tensor(obs, dtype=torch.float).unsqueeze(0).to(self.device)
-                        main_output = self.q_net(obs_tensor)
+                main_output = dqn_output()
                 """这里将观测传入模型中------------------------------------------------------------------------------------"""
                 # main_output 形状: (1, n_actions) 或 (n_actions,)
-                main_output = main_output.squeeze(0)  # 确保是 (n_actions,)
                 if self.leo_action_mask_enabled:
                     if not self._leo_valid_actions(is_computed, main_output.size(-1)):
-                        return 5
+                        return (5, float('-inf')) if return_score else 5
                     main_output = self._mask_leo_action_scores(main_output, is_computed)
                     next_index = torch.argmax(main_output).item()
                 elif not is_computed:
@@ -3708,6 +3724,8 @@ class Satellite_with_Computing(Satellite):
                 else:
                     # 已计算时，掩码掉最后一个动作（本地计算）
                     next_index = torch.argmax(main_output[0:4]).item()
+                if return_score:
+                    return int(next_index), dqn_action_score(main_output, int(next_index))
                 return next_index
             """这里动作集合通常包含：选择某个 neighbor(index)、选择本地计算(index 4)、或其他(index 5 表示错误/放弃）。"""
         else:#适用于 PPO 等策略梯度算法，通过网络输出的概率分布采样动作
@@ -3735,7 +3753,8 @@ class Satellite_with_Computing(Satellite):
                 main_output = main_output.unsqueeze(0)
             if self.leo_action_mask_enabled:
                 if not self._leo_valid_actions(is_computed, main_output.size(-1)):
-                    return [5, 0.0]
+                    invalid_action = [5, 0.0]
+                    return (invalid_action, float('-inf')) if return_score else invalid_action
                 main_output = self._mask_leo_action_scores(main_output, is_computed)
             elif is_computed:
                 # 已计算时，掩码掉最后一个动作（本地计算）
@@ -3748,7 +3767,10 @@ class Satellite_with_Computing(Satellite):
             # Categorical 是 PyTorch 中用于离散动作空间的概率分布类，适用于从有限个动作中按概率采样的场景。
             # 该分布以 main_output（已归一化的概率）为参数，后续可通过它进行采样或计算概率。
             action = dist.sample()
-            return [action.item(), dist.log_prob(action).item()]
+            action_result = [action.item(), dist.log_prob(action).item()]
+            if return_score:
+                return action_result, action_result[1]
+            return action_result
 
     def _leo_valid_actions(self, is_computed, action_dim=5):
         action_dim = int(action_dim)
@@ -3909,9 +3931,7 @@ class Satellite_with_Computing(Satellite):
                     packet.destination = destination
                 
                 if packet.temporary_destination:
-                    current_temp_dst = packet.temporary_destination[0]
-                    if self.name == current_temp_dst:
-                        packet.temporary_destination.pop(0)
+                    if self.name in packet.temporary_destination:
                         transformer = getattr(self.propagator, 'transformer_module', None)
                         meo_router = getattr(transformer, 'meo_router', None)
                         previous_domain = None
@@ -3943,13 +3963,7 @@ class Satellite_with_Computing(Satellite):
                             and destination in self.propagator.satellites
                             and self.propagator.satellites[destination].masterMeo != self.masterMeo
                         ):
-                            new_temps = []
-                            for meo in plan.get('domains', []):
-                                info = plan['domain_entries'][meo]
-                                if info['entry'] == self.name:
-                                    continue
-                                new_temps.append(info['entry'])
-                                break
+                            new_temps = list(plan.get('boundary_sat', []) or [])
                             packet.add_temporary_destination(new_temps)
                             if new_temps:
                                 next_meo_plan = plan
@@ -3958,15 +3972,33 @@ class Satellite_with_Computing(Satellite):
                             meo_router.finish_segment(packet, next_plan=next_meo_plan, reached_node=self.name)
                             if next_meo_plan is not None:
                                 meo_router.attach_decision(packet, next_meo_plan)
-                    if packet.temporary_destination:
-                        destination = packet.temporary_destination[0]
-                        
                 # 根据 obs_type 获取当前观测
                 mission_state = [type, size/self.max_size, computing_demand/self.computing_ability, size_after_computing/self.max_size]
+                decision_destinations = list(packet.temporary_destination) if packet.temporary_destination else [destination]
+                decision_candidates = []
+                for candidate_destination in decision_destinations:
+                    candidate_task_context = None
+                    candidate_task_edge_feats = None
+                    if self.propagator.obs_type == 'graph_separated':
+                        candidate_obs, candidate_task_context, candidate_task_edge_feats = self._get_state_for_decision(
+                            candidate_destination, hops, is_computed, mission_state
+                        )
+                    else:
+                        candidate_obs, hop2_info = self._get_state_for_decision(
+                            candidate_destination, hops, is_computed, mission_state)
+                        candidate_task_context = hop2_info if self.propagator.is_separated_mode() else None
+                    decision_candidates.append({
+                        'destination': candidate_destination,
+                        'obs': candidate_obs,
+                        'task_context': candidate_task_context,
+                        'task_edge_feats': candidate_task_edge_feats,
+                    })
+
+                destination = decision_candidates[0]['destination']
+                current_obs = decision_candidates[0]['obs']
+                current_task_context = decision_candidates[0]['task_context']
+                current_task_edge_feats = decision_candidates[0]['task_edge_feats']
                 if self.propagator.obs_type == 'graph_separated':
-                    current_obs, current_task_context, current_task_edge_feats = self._get_state_for_decision(
-                        destination, hops, is_computed, mission_state
-                    )
                     """
                     current_obs:PyG 异构图（只包含纯环境信息）
                         agent 节点特征：[3维] = [is_producing, memory_remain, computing_remain]
@@ -4039,8 +4071,6 @@ class Satellite_with_Computing(Satellite):
                     """
 
                 else:
-                    current_obs, hop2_info = self._get_state_for_decision(
-                        destination, hops, is_computed, mission_state)
                     """
                     current_obs：
                         flat 模式：扁平状态向量 [33维]
@@ -4052,7 +4082,7 @@ class Satellite_with_Computing(Satellite):
                             - 分离模式：任务上下文张量 [6维] = [type, size_norm, computing_demand_norm, size_after_computing_norm, routing_info(2维)]
                     """
                     
-                    current_task_context = hop2_info if self.propagator.is_separated_mode() else None
+                    current_task_context = current_task_context if self.propagator.is_separated_mode() else None
                     current_task_edge_feats = None
                 # current_obs 根据 obs_type 不同：
                 # - flat: 扁平状态向量:包含 agent 状态 + 4个邻居状态 + 任务信息;不使用图结构
@@ -4195,7 +4225,6 @@ class Satellite_with_Computing(Satellite):
 
                 """
 
-
                 """
                     这里的else包含了四种模式：flat;relational;graph;以及分离模式(relational_separated)。
                     
@@ -4271,7 +4300,28 @@ class Satellite_with_Computing(Satellite):
                                 action=5
                         next_index = action
                     else:
-                        action = self.get_next_hop(current_obs, destination, is_computed, current_task_context, current_task_edge_feats)
+                        if packet.temporary_destination:
+                            evaluated_candidates = []
+                            for candidate in decision_candidates:
+                                candidate_action, candidate_score = self.get_next_hop(
+                                    candidate['obs'],
+                                    candidate['destination'],
+                                    is_computed,
+                                    candidate['task_context'],
+                                    candidate['task_edge_feats'],
+                                    return_score=True,
+                                )
+                                candidate_score = float(candidate_score)
+                                if np.isnan(candidate_score):
+                                    candidate_score = float('-inf')
+                                evaluated_candidates.append((candidate_score, candidate_action, candidate))
+                            _, action, selected_candidate = max(evaluated_candidates, key=lambda item: item[0])
+                            destination = selected_candidate['destination']
+                            current_obs = selected_candidate['obs']
+                            current_task_context = selected_candidate['task_context']
+                            current_task_edge_feats = selected_candidate['task_edge_feats']
+                        else:
+                            action = self.get_next_hop(current_obs, destination, is_computed, current_task_context, current_task_edge_feats)
                         """调用策略网络 get_next_hop，基于观测状态与目标 destination 返回 action"""
                         if 'PPO' in self.mode:
                             next_index = action[0]
@@ -4308,6 +4358,7 @@ class Satellite_with_Computing(Satellite):
                                 size_after_computing=size_after_computing,
                                 is_computed=is_computed,
                                 hops=hops,
+                                destination=destination,
                                 next_hop_target=next_hop,
                                 compute_node_target=None,
                             )
@@ -4325,10 +4376,11 @@ class Satellite_with_Computing(Satellite):
                             self._store_leo_policy_experience(
                                 task_type=type,
                                 packet_size=size,
-                                computing_demand=compute_chunk,
+                                computing_demand=computing_demand,
                                 size_after_computing=size_after_computing,
                                 is_computed=is_computed,
                                 hops=hops,
+                                destination=destination,
                                 next_hop_target=None,
                                 compute_node_target=self.name,
                             )
@@ -5083,11 +5135,7 @@ class SatelliteNetworkSimulator_OnbardComputing(SatelliteNetworkSimulator):
                     packet.is_intra_destination = intra_traffic
                     if intra_traffic is False and plan != None:
                         temporary_destination = []
-                        for meo, info in plan['domain_entries'].items():
-                            if info['entry'] == satellite:
-                                continue
-                            temporary_destination.append(info['entry'])
-                            break
+                        temporary_destination = plan["boundary_sat"]
                         packet.add_temporary_destination(temporary_destination)
                         transformer = getattr(self, 'transformer_module', None)
                         meo_router = getattr(transformer, 'meo_router', None)
