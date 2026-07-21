@@ -39,8 +39,6 @@ class MEODomainRewardFunction:
         domain_hops = max(0, len(domains) - 1)  # 域跳数等于域数量减一，最小为 0，避免空路径得到负数。
         score = float(trace.get("score", 0.0) or 0.0)  # 读取 MEO 规划阶段给出的路径风险/代价分数。
         terminal_reward = float(terminal_reward)  # 将外部传入的包级终局 reward 转成浮点数，仅用于判断成败和可选加权。
-        # compute_waiting_time = float(trace.get("computing_waiting_time", 0.0) or 0.0) if is_compute else 0.0  # 如果任务被计算，取出该任务累计计算等待时间；未计算时记为 0。
-        # neighbor_compute_balance = self._neighbor_compute_balance_from_trace(trace)  # 从 MEO 状态向量中取出当前最多 4 个邻居域的算力均衡度。
         outcome_reward = self.terminal_outcome(
             trace,
             terminal_reward=terminal_reward,
@@ -133,7 +131,8 @@ class MEODomainRewardFunction:
             - self.domain_hop_penalty * domain_hops
             - self.path_hop_penalty * path_hops
             - self.boundary_load_penalty * boundary_load
-            - self.boundary_delay_penalty * segment_delay
+            - 1.0 * segment_delay
+            # - self.boundary_delay_penalty * segment_delay
         )
 
     @staticmethod
@@ -170,12 +169,14 @@ class MEODomainRouter:
         self.max_neighbors = int(agent_cfg.get("max_neighbors", MAX_MEO_NEIGHBORS))
         self.max_domain_hops = int(agent_cfg.get("max_domain_hops", self.cfg.get("plan_max_hops", 30)))
         self.update_every = max(1, int(agent_cfg.get("update_every", 1)))
+        self.updates_per_step = max(1, int(agent_cfg.get("updates_per_step", 1)))
         self.model_path = agent_cfg.get("model_path")
         state_dim = meo_state_dim(self.use_meo_aggregation, self.max_neighbors)
         self.agent = MEODomainRoutingAgent(state_dim=state_dim, cfg=agent_cfg, device=str(device))
         self.reward_function = MEODomainRewardFunction(reward_cfg)
         self.agent.load(self.model_path)
         self.decision_count = 0
+        self.trace_sequence = 0
         self.update_count = 0
         self.last_update_decision_count = 0
         self.last_loss = None
@@ -231,17 +232,10 @@ class MEODomainRouter:
                 src=src,
                 excluded_domains=excluded_domains,
             )
-            leo_context = self._build_leo_policy_context(
-                meo_satellite=meo_satellite,
-                graph=graph,
-                neighbors=neighbors,
-                source_domain=source_domain,
-                target_domain=target_domain,
-                src=src,
-                dst=dst,
-                task_context=task_context,
-            )
-            action, q_score, q_values = self.agent.act(state, mask, explore=True, leo_context=leo_context)
+            # MEO owns only the domain-level target.  The packet-level LEO
+            # agent remains responsible for choosing a concrete boundary and
+            # the hops used to reach it.
+            action, q_score, q_values = self.agent.act(state, mask, explore=True)
             if action < 0 or action >= len(neighbors):
                 continue
             next_domain = neighbors[action]
@@ -259,9 +253,7 @@ class MEODomainRouter:
             )
             if plan is None:
                 continue
-            self._apply_leo_rollout_to_plan(plan, getattr(self.agent, "last_leo_rollout", None))
-            risk = float(plan.get("score", 0.0))
-            policy_score = float(q_score) - risk
+            policy_score = float(q_score)
             plan["meo_policy"] = {
                 "state": state,
                 "action": int(action),
@@ -298,7 +290,11 @@ class MEODomainRouter:
         policy = plan.get("meo_policy") if isinstance(plan, dict) else None
         if packet is None or policy is None:
             return
+        self.trace_sequence += 1
+        decision_id = str(policy.get("decision_id") or f"meo-decision-{self.trace_sequence}")
+        policy["decision_id"] = decision_id
         trace = {
+            "decision_id": decision_id,
             "state": np.asarray(policy["state"], dtype=np.float32),
             "action": int(policy["action"]),
             "action_mask": np.asarray(policy["action_mask"], dtype=np.float32),
@@ -326,6 +322,51 @@ class MEODomainRouter:
             packet.meo_decision_traces = traces
         traces.append(trace)
         packet.meo_decision_trace = trace
+
+    def record_executed_boundary(self, packet, meo_satellite, reached_node, previous_node=None) -> bool:
+        """Attach the boundary link actually used by the LEO policy to the active MEO trace."""
+        if packet is None or meo_satellite is None or reached_node is None:
+            return False
+        trace = getattr(packet, "meo_decision_trace", None)
+        if not isinstance(trace, dict):
+            traces = getattr(packet, "meo_decision_traces", None) or []
+            trace = traces[-1] if traces else None
+        if not isinstance(trace, dict):
+            return False
+
+        current_domain = trace.get("current_domain")
+        next_domain = trace.get("next_domain")
+        graph = getattr(meo_satellite, "inter_domain_graph", None)
+        links = self._boundary_links_for_direction(graph, current_domain, next_domain)
+        if not links:
+            return False
+
+        exact_matches = [
+            link for link in links
+            if link.get("source_boundary") == previous_node
+            and link.get("target_boundary") == reached_node
+        ]
+        reached_matches = [link for link in links if link.get("target_boundary") == reached_node]
+        matches = exact_matches or reached_matches
+        if not matches:
+            return False
+        link = min(matches, key=lambda item: float(item.get("quality_cost", 1.0)))
+        link_load = float(link.get("link_load", 0.0) or 0.0)
+        quality_cost = float(link.get("quality_cost", 1.0))
+        trace["transitions"] = [{
+            "from_domain": current_domain,
+            "to_domain": next_domain,
+            "source_boundary": link.get("source_boundary"),
+            "target_boundary": link.get("target_boundary"),
+            "quality_cost": quality_cost,
+            "link_load": link_load,
+            "link_load_ratio": self._link_load_ratio(meo_satellite, link_load),
+            "delay": float(link.get("delay", 0.0) or 0.0),
+        }]
+        trace["score"] = quality_cost
+        trace["executed_boundary_source"] = link.get("source_boundary")
+        trace["executed_boundary_target"] = link.get("target_boundary")
+        return True
 
     def finish_decision(self, packet, reward, done=True, meo_result=None):
         if packet is not None and meo_result is not None:
@@ -485,15 +526,20 @@ class MEODomainRouter:
             return None
         if self.decision_count % self.update_every != 0:
             return None
-        loss = self.agent.update()
-        self.last_update_decision_count = self.decision_count
-        if loss is not None:
+        losses = []
+        for _ in range(self.updates_per_step):
+            loss = self.agent.update()
+            if loss is None:
+                continue
+            loss = float(loss)
+            losses.append(loss)
             self.last_loss = loss
             self.update_count += 1
-            self.interval_losses.append(float(loss))
+            self.interval_losses.append(loss)
             self.interval_updates += 1
             self.agent.decay_epsilon()
-        return loss
+        self.last_update_decision_count = self.decision_count
+        return float(np.mean(losses)) if losses else None
 
     def format_training_log(self, step=None, total_steps=None, round_idx=None):
         if (
@@ -764,48 +810,30 @@ class MEODomainRouter:
             return False
         return int(hops) + 1 <= self.max_domain_hops
 
-    def _assemble_local_plan(self, meo_satellite, graph, current_domain, next_domain, target_domain, src, dst, packet_size):  # 根据当前域和策略选择的下一域，组装只包含一次跨域动作的局部路由计划。
+    def _assemble_local_plan(self, meo_satellite, graph, current_domain, next_domain, target_domain, src, dst, packet_size):  # 根据当前域和策略选择的下一域，组装只包含域级目标的局部计划。
         if current_domain == next_domain or not graph.has_edge(current_domain, next_domain):  # 当前域与下一域相同或两域之间没有边时，无法执行有效的跨域转发。
             return None  # 返回空值，表示本次局部路由计划组装失败。
-        link = self._best_boundary_link(graph, current_domain, next_domain)  # 从当前域到下一域的候选边界链路中选择质量最优的一条。
-        if link is None:  # 如果两个域之间不存在可用的边界链路，则无法继续构造计划。
-            return None  # 返回空值，让调用方跳过当前候选动作。
-        cost = float(link.get("quality_cost", 1.0))  # 读取边界链路的质量代价，字段缺失时默认使用 1.0。
-        link_load = float(link.get("link_load", 0.0) or 0.0)  # 读取边界链路当前负载，并将缺失值或 None 统一转换为 0.0。
-        link_load_ratio = self._link_load_ratio(meo_satellite, link_load)  # 根据卫星链路容量将绝对负载换算为归一化负载比例。
-        transition = {  # 构造本次从当前域跨越到下一域的边界跳转信息。
-            "from_domain": current_domain,  # 记录跨域跳转的起始 MEO 域。
-            "to_domain": next_domain,  # 记录跨域跳转的目标 MEO 域。
-            "source_boundary": link.get("source_boundary"),  # 记录当前域一侧负责离域的边界卫星节点。
-            "target_boundary": link.get("target_boundary"),  # 记录下一域一侧负责入域的边界卫星节点。
-            "quality_cost": cost,  # 保存所选边界链路的质量代价。
-            "link_load": link_load,  # 保存所选边界链路的绝对负载。
-            "link_load_ratio": link_load_ratio,  # 保存所选边界链路的归一化负载比例。
-            "delay": float(link.get("delay", 0.0) or 0.0),  # 保存边界链路延迟，字段缺失或为空时按 0.0 处理。
-        }  # 本次跨域跳转信息构造完成。
-        current_entry = src  # 当前域的域内路径从源卫星节点开始。
-        current_exit = transition["source_boundary"]  # 当前域的域内路径在所选源侧边界卫星处结束。
-        next_entry = transition["target_boundary"]  # 下一域的路径从所选目标侧边界卫星处开始。
-        next_exit = dst if next_domain == target_domain else None  # 若下一域就是目标域则出口为目的节点，否则暂不确定下一次离域出口。
-        if current_exit is None or next_entry is None:  # 任一侧边界节点缺失时，跨域链路无法形成完整连接。
-            return None  # 返回空值，避免生成包含无效边界节点的计划。
-
-        domain_entries = {  # 记录本次局部计划涉及的两个域各自的入口和出口节点。
-            current_domain: {"entry": current_entry, "exit": current_exit},  # 当前域从源节点进入，并从源侧边界节点离开。
-            next_domain: {"entry": next_entry, "exit": next_exit},  # 下一域从目标侧边界节点进入，只有到达目标域时才明确出口为目的节点。
-        }  # 两个域的入口与出口映射构造完成。
+        boundary_satellites = self._target_boundary_satellites_for_direction(graph, current_domain, next_domain)
+        if not boundary_satellites:
+            return None
+        domain_entries = {
+            current_domain: {"entry": src, "exit": None},
+            next_domain: {"entry": None, "exit": dst if next_domain == target_domain else None},
+        }
         env = getattr(meo_satellite, "env", None)  # 获取仿真环境对象，以便读取当前决策发生的仿真时间。
         return {  # 返回供后续转发、策略记录和奖励计算使用的局部路由计划。
             "domains": [current_domain, next_domain],  # 保存此次局部动作覆盖的当前域和下一域。
-            "transitions": [transition],  # 保存仅包含本次跨域动作的跳转记录列表。
+            "transitions": [],  # 具体边界链路由 LEO 执行完成后回写。
             "domain_entries": domain_entries,  # 保存各域对应的入口与出口卫星节点。
+            "path": [],  # 域内路径由 LEO Agent 逐跳决定。
+            "boundary_sat": boundary_satellites,
             "source": src,  # 保存数据包的源卫星节点。
             "destination": dst,  # 保存数据包的最终目的卫星节点。
             "source_domain": current_domain,  # 保存本次局部计划开始时所在的 MEO 域。
             "target_domain": target_domain,  # 保存数据包最终需要到达的目标 MEO 域。
             "next_domain": next_domain,  # 保存 MEO 策略为本次动作选择的下一跳域。
             "packet_size": float(packet_size or 0.0),  # 保存浮点格式的数据包大小，空值按 0.0 处理。
-            "score": float(cost),  # 以本次边界链路质量代价作为局部计划的风险或代价分数。
+            "score": 0.0,  # 执行前不为 MEO 预选任何边界链路。
             "decision_time": float(getattr(env, "now", 0.0) if env is not None else 0.0),  # 保存当前仿真时刻；环境不存在时使用 0.0。
             "reachable": True,  # 标记该计划已经通过必要的边界链路和域内路径可达性检查。
             "local_only": True,  # 标记该计划只描述当前域到下一域的一次局部跨域动作。
@@ -901,6 +929,15 @@ class MEODomainRouter:
         return float(np.clip(float(link_load or 0.0) / capacity, 0.0, 1.0))
 
     def _best_boundary_link(self, graph, domain_a, domain_b):
+        candidates = self._boundary_links_for_direction(graph, domain_a, domain_b)
+        if not candidates:
+            return None
+        return min(candidates, key=lambda item: float(item.get("quality_cost", 1.0)))
+
+    @staticmethod
+    def _boundary_links_for_direction(graph, domain_a, domain_b):
+        if graph is None or domain_a is None or domain_b is None or not graph.has_edge(domain_a, domain_b):
+            return []
         links = graph[domain_a][domain_b].get("boundary_links", {}) or {}
         candidates = []
         for link in links.values():
@@ -909,35 +946,25 @@ class MEODomainRouter:
             src_domain = link.get("source_domain")
             dst_domain = link.get("target_domain")
             if src_domain == domain_a and dst_domain == domain_b:
-                candidates.append(link)
+                directional_link = dict(link)
             elif src_domain == domain_b and dst_domain == domain_a:
-                reversed_link = dict(link)
-                reversed_link["source_domain"] = domain_a
-                reversed_link["target_domain"] = domain_b
-                reversed_link["source_boundary"] = link.get("target_boundary")
-                reversed_link["target_boundary"] = link.get("source_boundary")
-                candidates.append(reversed_link)
-        if not candidates:
-            return None
-        return min(candidates, key=lambda item: float(item.get("quality_cost", 1.0)))
+                directional_link = dict(link)
+                directional_link["source_domain"] = domain_a
+                directional_link["target_domain"] = domain_b
+                directional_link["source_boundary"] = link.get("target_boundary")
+                directional_link["target_boundary"] = link.get("source_boundary")
+            else:
+                continue
+            if directional_link.get("source_boundary") is None or directional_link.get("target_boundary") is None:
+                continue
+            candidates.append(directional_link)
+        return candidates
 
     @staticmethod
     def _target_boundary_satellites_for_direction(graph, domain_a, domain_b):
-        if graph is None or not graph.has_edge(domain_a, domain_b):
-            return []
-        links = graph[domain_a][domain_b].get("boundary_links", {}) or {}
         boundary_satellites = []
-        for link in links.values():
-            if not isinstance(link, dict):
-                continue
-            src_domain = link.get("source_domain")
-            dst_domain = link.get("target_domain")
-            if src_domain == domain_a and dst_domain == domain_b:
-                boundary_satellite = link.get("target_boundary")
-            elif src_domain == domain_b and dst_domain == domain_a:
-                boundary_satellite = link.get("source_boundary")
-            else:
-                continue
+        for link in MEODomainRouter._boundary_links_for_direction(graph, domain_a, domain_b):
+            boundary_satellite = link.get("target_boundary")
             if boundary_satellite is not None and boundary_satellite not in boundary_satellites:
                 boundary_satellites.append(boundary_satellite)
         return boundary_satellites

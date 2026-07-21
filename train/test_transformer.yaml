@@ -1,192 +1,223 @@
-# GNN-DDQN with a conditional diffusion action prior.
-# Run:
-#   python PRC_GNN.py --config train/train_GNN_DQN_diffusion.yaml
+# GNN-DDQN、MEO 域级 Agent 与可选全局 Transformer 的联合实验配置。
+# 推荐运行入口：
+#   python PRC_GNN_TRANSFORMER.py --config train/test_transformer.yaml
 
-general:
-  random_seed: 42
-  phase: 'train'
-  begin_time: '2023-10-01 00:00:00'
-  time_stride: 1
-  rounds: 1
-  skip_time: [60, 0]
-  duration: 1500
-  epsilon: 0.9
-  min_epsilon: 0.02
-  epsilon_decay: 0.98 #0.98
-  print_cycle: 10
-  select_mode: 3
-  reward_factors: [1, 0.05, 1, 0.1, 0.25] # reach, delay（0.05）, loss, memory_threshold, memory_factor
+general:  # 训练流程、随机性和基础强化学习参数。
+  random_seed: 42  # 全局随机种子，用于提高重复实验的可复现性。
+  phase: 'train'  # 运行阶段；train 表示训练，test 表示只测试已训练模型。
+  begin_time: '2023-10-01 00:00:00'  # 卫星网络仿真的起始 UTC 时间。
+  time_stride: 1  # 外层每个仿真 step 推进的时间长度，单位为秒。
+  rounds: 1  # 完整训练/仿真轮数。
+  skip_time: [60, 0]  # 每轮开始前跳过的时间配置，格式由主程序按“分、秒”读取。
+  duration: 1500  # 每轮仿真持续时间，单位为秒。
+  epsilon: 0.9  # LEO 层 Agent 的初始 epsilon-greedy 随机探索率。
+  min_epsilon: 0.02  # LEO 层 Agent 探索率的最小值。
+  epsilon_decay: 0.98  # LEO 层 Agent 每个外层 step 的探索率衰减系数。
+  print_cycle: 10  # 每隔多少个外层 step 打印并保存一次训练统计。
+  select_mode: 3  # LEO 任务目的节点选择模式；3 表示启用当前的动态候选目的节点逻辑。
+  reward_factors: [1, 0.05, 1, 0.1, 0.25]  # LEO 奖励权重：到达、时延、丢包、内存阈值、内存占用。
 
-agent:
-  mode: 'GNN_DQN'
-  obs_type: 'graph'
-  controller_type: 'graph'
-  state_dim: 33
-  agent_feats: 9
-  nbr_feats: 4
-  nbr_feats_relational: 12
-  edge_feats: 3
-  n_actions: 5
-  max_nbrs: 4
-  hidden_size: 64
-  n_hops: 2
-  graph_enc_type: 'gn'
-  n_heads: 4
-  graph_gat_dropout: 0
-  use_rnn: false
-  dueling: false
-  buffer_size: 500000
-  batch_size: 1024
-  gamma: 0.99 #0.99
-  learning_rate: 0.0001
-  target_update_freq: 100
-  repeat: 5
+agent:  # LEO 层逐跳路由与计算卸载 Agent 配置。
+  mode: 'GNN_DQN'  # LEO 层强化学习算法模式，使用 GNN-DQN。
+  obs_type: 'graph'  # LEO 观测表示类型，graph 表示图结构观测。
+  controller_type: 'graph'  # 动作控制器类型，使用图网络控制器。
+  state_dim: 33  # 兼容扁平观测时使用的状态维度。
+  agent_feats: 9  # 当前 LEO Agent 节点的输入特征维度。
+  nbr_feats: 4  # 普通邻居节点的输入特征维度。
+  nbr_feats_relational: 12  # 关系图模式下邻居节点的输入特征维度。
+  edge_feats: 3  # 图中边的输入特征维度。
+  n_actions: 5  # LEO 动作数：最多4个邻居转发动作加1个本地计算动作。
+  max_nbrs: 4  # 每个 LEO 决策最多考虑的邻居数量。
+  hidden_size: 64  # LEO Q 网络和图编码器的隐藏层维度。
+  n_hops: 2  # LEO 图观测及消息传递使用的邻居跳数。
+  graph_enc_type: 'gn'  # 图编码器类型；gn 表示当前 Graph Network 编码器。
+  n_heads: 4  # 图注意力类编码器使用的注意力头数。
+  graph_gat_dropout: 0  # 图注意力编码器的 dropout 比例。
+  use_rnn: false  # 是否在 LEO 控制器中加入循环神经网络状态。
+  dueling: false  # 是否使用 Dueling DQN 的价值/优势双分支结构。
+  buffer_size: 500000  # LEO 经验回放池最多保存的 transition 数量。
+  batch_size: 1024  # LEO 网络每次梯度更新抽取的经验数量。
+  gamma: 0.99  # LEO DQN 的未来奖励折扣因子。
+  learning_rate: 0.0001  # LEO 网络优化器的学习率。
+  target_update_freq: 100  # LEO 目标网络每隔多少次训练更新同步一次。
+  repeat: 5  # 每个外层仿真 step 对 LEO Agent 执行的梯度更新次数。
 
-  use_diffusion: false
-  diffusion_steps: 10
-  diffusion_hidden_size: 128
-  diffusion_loss_weight: 0.01
-  diffusion_q_loss_weight: 0.05
-  diffusion_q_temperature: 1.0
-  diffusion_guidance_weight: 0.02
-  diffusion_guidance_warmup_updates: 3000
-  diffusion_deterministic: true
-  diffusion_normalize_prior: true
-  diffusion_prior_clip: 2.0
+  use_diffusion: false  # 是否启用条件扩散模型作为动作先验。
+  diffusion_steps: 10  # 扩散模型的去噪时间步数。
+  diffusion_hidden_size: 128  # 扩散动作先验网络的隐藏维度。
+  diffusion_loss_weight: 0.01  # 扩散重建损失在总损失中的权重。
+  diffusion_q_loss_weight: 0.05  # 扩散先验与 Q 值约束损失的权重。
+  diffusion_q_temperature: 1.0  # 将 Q 值转换为软目标分布时使用的温度。
+  diffusion_guidance_weight: 0.02  # 扩散动作采样时 Q 值引导项的强度。
+  diffusion_guidance_warmup_updates: 3000  # 启用完整扩散 Q 引导前的训练更新预热次数。
+  diffusion_deterministic: true  # 推理时是否采用确定性的扩散去噪过程。
+  diffusion_normalize_prior: true  # 是否对扩散动作先验进行归一化。
+  diffusion_prior_clip: 2.0  # 扩散动作先验数值的绝对截断范围。
 
-  model_path: 'model_weights/gnn_ddqn_diffusion_improved.pth'
+  model_path: 'model_weights/gnn_ddqn_diffusion_improved.pth'  # LEO Agent 模型权重的加载与保存路径。
 
-environment:
-  mission_possibility: [0.5, 0.5]
-  poisson_rate: 30
-  packet_frequency: 0.6
-  computing_demand_factor: [150, 250]
-  computing_demand_factor_2: [300, 500]
-  size_after_computing_factor: [0.08, 0.125]
-  size_after_computing_1: 40000.0
-  packet_size_range: [200000000.0, 600000000.0]
-  tle_filepath: 
-    - "./Satellite_Data/60Degree_500_72x22_tles.txt"
-    - "./Satellite_Data/60Degree_10000_10x10_tles.txt"
-  training_data_dir: './training_process_data/only_select_domain'
-  SOD_file_path: './Ground_Data/11_ground_stations.txt'
-  elevation_angle: 45
-  pole: false
-  memory: 12000000000.0
-  computing_ability: 50000000000.0
-  transmission_rate: 1200000000.0
-  downlink_rate: 3000000000.0
-  downstream_delays: 0.0016667
-  mean_interval_time: 300
-  state_update_period: 0.2
-  meo_state_update_period: 0.4
-  del_cycle: 10
-  random_edges_del: 100
-  random_nodes_del: 0
-  update_cycle: 10
-  n_hops: 2
-  visualize: false
-  print_info: false
-  show_detail: false
-  save_log: false
-  controlDomainNumber: 4
-  MinimuElevationAngle: 25
-  domainPartitionMethod: RectangularDivision  # 可选: Eunomia, RectangularDivision
-  rectangular_m: 10
-  rectangular_n: 10
-  ShowLink: false 
-  # save_training_data: 'withoutTransformer_fre0.5_duration3000.txt'
-  # save_training_data: 'leo72x22_meo10x10_withoutTransformer_fre0.8.txt'
-  save_training_data: 'leo72x22_meo10x10True_withoutTransformer_fre0.8_test.txt'
-  business_record_enabled: false
-  business_record_path: './business_record_data/business_traffic_records.txt'
-  business_record_reset: true
+environment:  # 卫星网络、业务生成、资源容量和日志配置。
+  mission_possibility: [0.5, 0.5]  # 两类业务任务的生成概率权重。
+  poisson_rate: 30  # 业务到达过程使用的泊松率参数。
+  packet_frequency: 0.5  # 业务包生成频率参数。
+  computing_demand_factor: [150, 250]  # 第一类计算任务的计算需求采样范围因子。
+  computing_demand_factor_2: [300, 500]  # 第二类计算任务的计算需求采样范围因子。
+  size_after_computing_factor: [0.08, 0.125]  # 计算后数据量相对原始包大小的比例范围。
+  size_after_computing_1: 40000.0  # 特定任务类型计算后的固定数据大小参数。
+  packet_size_range: [200000000.0, 600000000.0]  # 原始业务包大小的随机采样范围，单位为字节。
+  tle_filepath:  # 仿真使用的轨道 TLE 数据文件列表。
+    - "./Satellite_Data/60Degree_500_72x22_tles.txt"  # LEO 星座的 TLE 文件。
+    - "./Satellite_Data/60Degree_10000_10x10_tles.txt"  # MEO 星座的 TLE 文件。
+  training_data_dir: './training_process_data/critic_network'  # 训练过程指标文本的输出目录。
+  SOD_file_path: './Ground_Data/11_ground_stations.txt'  # 地面站位置与属性数据文件。
+  elevation_angle: 45  # 建立星地可见链路时使用的仰角阈值，单位为度。
+  pole: false  # 是否启用极区相关的特殊拓扑处理。
+  memory: 12000000000.0  # 每颗卫星的存储容量，单位为字节。
+  computing_ability: 50000000000.0  # 每颗卫星的计算能力容量参数。
+  transmission_rate: 1200000000.0  # 星间链路传输速率，单位为 bit/s。
+  downlink_rate: 3000000000.0  # 星地链路下行传输速率，单位为 bit/s。
+  downstream_delays: 0.0016667  # 星地下行链路的基础时延，单位为秒。
+  mean_interval_time: 300  # 业务或任务间隔过程使用的平均时间参数。
+  state_update_period: 0.2  # LEO 网络状态刷新的周期，单位为秒。
+  meo_state_update_period: 0.4  # MEO 域级聚合状态刷新的周期，单位为秒。
+  del_cycle: 10  # 随机故障链路/节点删除状态的刷新周期。
+  random_edges_del: 100  # 每次故障注入随机删除的链路数量。
+  random_nodes_del: 0  # 每次故障注入随机删除的节点数量。
+  update_cycle: 10  # 卫星拓扑及相关路由信息的更新周期。
+  n_hops: 2  # 环境为 LEO Agent 构造观测时使用的邻居跳数。
+  visualize: false  # 是否实时可视化卫星网络拓扑。
+  print_info: false  # 是否打印环境级普通调试信息。
+  show_detail: false  # 是否打印更详细的数据包转发过程。
+  save_log: false  # 是否保存环境的详细事件日志。
+  controlDomainNumber: 4  # 环境使用的受控域数量参数。
+  MinimuElevationAngle: 25  # 域划分或链路筛选使用的最小仰角，单位为度。
+  domainPartitionMethod: RectangularDivision  # MEO 域划分方法；可选 Eunomia 或 RectangularDivision。
+  rectangular_m: 10  # 矩形域划分在第一个方向上的分区数量。
+  rectangular_n: 10  # 矩形域划分在第二个方向上的分区数量。
+  ShowLink: false  # 是否显示或输出域划分后的链路信息。
+  # 旧实验文件名示例：save_training_data: 'withoutTransformer_fre0.5_duration3000.txt'
+  # 旧实验文件名示例：save_training_data: 'leo72x22_meo10x10_withoutTransformer_fre0.8.txt'
+  save_training_data: 'leo72x22_meo10x10True_withoutTransformer_fre0.8_test.txt'  # 本次实验训练统计的输出文件名。
+  business_record_enabled: false  # 是否额外记录逐条业务流量明细。
+  business_record_path: './business_record_data/business_traffic_records.txt'  # 业务流量明细文件路径。
+  business_record_reset: true  # 启动实验时是否清空既有业务明细文件。
 
-transformer:
-  enabled: false
-  meo_exit_enabled: true
-  use_meo_aggregation: true
-  meo_agent:
-    hidden_dim: 64
-    buffer_size: 100000
+transformer:  # 全局时序 Transformer、MEO 域级 Agent 与域内 LEO 策略配置。
+  enabled: false  # 是否启用全局时序 Transformer 预测器；false 不影响单独启用 MEO Agent。
+  meo_exit_enabled: true  # 是否启用 MEO Agent 选择下一跳域及跨域出口。
+  use_meo_aggregation: true  # MEO 状态是否使用域内 LEO 信息的聚合特征。
+  meo_agent:  # MEO 域级 DDQN Agent 配置。
+    hidden_dim: 64  # MEO 状态编码器和 Q 网络的隐藏维度。
+    encoder_type: self_attention  # MEO 状态编码器类型；可选 mlp 或 self_attention。
+    attention_heads: 4  # MEO 邻居自注意力的注意力头数。
+    attention_layers: 2  # MEO 邻居 TransformerEncoder 层数。
+    attention_ff_dim: 128  # 每层 MEO 自注意力编码器的前馈网络维度。
+    attention_dropout: 0.0  # MEO 自注意力编码器的 dropout 比例。
+    buffer_size: 100000  # MEO 经验回放池最多保存的 transition 数量。
+    batch_size: 1024  # MEO 网络每次梯度更新抽取的经验数量。
+    gamma: 0.97  # MEO DDQN 的未来奖励折扣因子，同时用于势函数奖励。
+    lr: 1e-4  # MEO Q 网络优化器的学习率。
+    epsilon: 0.9  # MEO Agent 的初始 epsilon-greedy 探索率。
+    min_epsilon: 0.01  # MEO Agent 探索率的最小值。
+    epsilon_decay: 0.98  # 每次成功完成 MEO 梯度更新后的探索率衰减系数。
+    target_update_freq: 10  # MEO 目标 Q 网络每隔多少次梯度更新同步一次。
+    update_every: 1  # 每累计多少次新的 MEO 决策才允许触发一轮更新。
+    updates_per_step: 8  # 每次触发 MEO 更新时连续执行的梯度更新次数。
+    max_domain_hops: 100  # 单个业务允许规划的最大 MEO 域跳数。
+    reward:  # MEO 域级动作的阶段和终局奖励权重。
+      success_reward: 1.5  # 数据包成功到达时的基础正奖励。
+      failure_penalty: 1.5  # 数据包链路失败或普通失败时的基础惩罚。
+      unfinished_penalty: 0.0  # MEO 决策尚未终止时的结果惩罚。
+      score_penalty: 0.0  # MEO 规划路径 quality score 的惩罚权重。
+      domain_hop_penalty: 0.02  # 每次 MEO 域级跳转的惩罚权重。
+      path_hop_penalty: 0.1  # 域内 LEO 路径跳数的惩罚权重。
+      boundary_load_penalty: 0.0  # 跨域边界链路负载率的惩罚权重。
+      boundary_delay_penalty: 0.08  # 分段或端到端时延的惩罚权重。
+      terminal_reward_weight: 0.2  # 外部 LEO 包级终局 reward 融入 MEO 终局结果的权重。
+      progress_reward_weight: 0.05  # 基于到目标域距离势函数的阶段奖励权重。
+      terminal_credit_weight: 0.0  # 向已完成各阶段经验追加终局信用的权重；0 表示关闭。
+      compute_penalty: 1.5  # 未按需求完成计算但到达目的地时的额外惩罚。
+      memory_penalty: 0.5  # 因存储溢出丢包时的额外惩罚。
+      segment_success_reward: 0.0  # 每成功跨越一个 MEO 分段的固定奖励；0 避免鼓励多跳。
+    model_path: 'model_weights/meo_domain_agent_attention.pth'  # MEO 自注意力 Agent 权重的加载与保存路径。
+    leo_policy:  # 可选的 MEO 域内 LEO 注意力预测策略配置。
+      enabled: false  # 是否创建域内 LEO 注意力策略网络。
+      model_path: model_weights/leo_attention_policy_v2.pt  # 域内 LEO 策略预训练权重的加载路径。
+      save_path: model_weights/leo_attention_policy_v2.pt  # 域内 LEO 策略训练后权重的保存路径。
+      train_enabled: false  # 是否随主训练流程更新域内 LEO 策略。
+      lr: 1e-4  # 域内 LEO 策略优化器的学习率。
+      batch_size: 32  # 域内 LEO 策略每次监督更新的样本数。
+      buffer_size: 50000  # 域内 LEO 策略监督经验池的最大容量。
+      update_every: 1  # 域内 LEO 策略每隔多少次训练调用执行更新。
+      updates_per_step: 1  # 每次触发时连续更新域内 LEO 策略的次数。
+      loss_weight: 1.0  # 域内下一跳和计算节点监督损失的总权重。
+      selection_enabled: false  # 是否允许域内 LEO 策略结果参与 MEO 动作选择。
+      loss_gate_enabled: false  # 是否仅在滑动窗口损失达标后启用策略选择。
+      loss_gate_window_size: 20  # 域内 LEO 策略损失滑动窗口长度。
+      loss_gate_threshold: 0.1  # 允许域内 LEO 策略参与选择的平均损失阈值。
+      unreachable_penalty: 2.0  # 域内 rollout 无法到达目标出口时的评分惩罚。
+      hop_penalty: 0.0  # 域内 rollout 每个额外跳数的评分惩罚。
+      delay_penalty: 0.1  # 域内 rollout 累计链路时延的评分惩罚权重。
+      compute_penalty: 0.0  # 域内 rollout 未满足计算需求时的评分惩罚。
+      hidden_dim: 64  # 域内 LEO 注意力策略的隐藏维度。
+      num_layers: 2  # 域内 LEO 图注意力消息传递层数。
+      dropout: 0.1  # 域内 LEO 注意力策略的 dropout 比例。
+      max_steps: 16  # 单次域内策略 rollout 允许执行的最大 LEO 步数。
+  critic:  # MEO 域动作与实际 LEO 单步动作对全局状态影响的旁路评价网络。
+    enabled: true  # 训练并记录评价；满足下方门控后可参与跨域 LEO 贪心动作选择。
+    model_path: 'model_weights/global_action_critic.pth'
+    buffer_size: 50000
     batch_size: 64
-    gamma: 0.97
-    lr: 1e-4
-    epsilon: 0.9
-    min_epsilon: 0.01
-    epsilon_decay: 0.98
-    target_update_freq: 10
-    update_every: 1
-    max_domain_hops: 100
-    reward:
-      success_reward: 1.5 #1.5
-      failure_penalty: 1.5 #1.2
-      unfinished_penalty: 0.0
-      score_penalty: 0.0
-      domain_hop_penalty: 0.02
-      path_hop_penalty: 0.0
-      boundary_load_penalty: 0.2
-      boundary_delay_penalty: 0.08 #0.05
-      terminal_reward_weight: 0.2 #0.1
-      progress_reward_weight: 0.2
-      terminal_credit_weight: 0.2
-      compute_penalty: 0.2 #0.3
-      memory_penalty: 0.5 #0.5
-      segment_success_reward: 1.0 #0.8
-    model_path: 'model_weights/meo_domain_agent.pth'
-    leo_policy:
-      enabled: false
-      model_path: model_weights/leo_attention_policy_v2.pt
-      save_path: model_weights/leo_attention_policy_v2.pt
-      train_enabled: false
-      lr: 1e-4
-      batch_size: 32
-      buffer_size: 50000
-      update_every: 1
-      updates_per_step: 1
-      loss_weight: 1.0
-      selection_enabled: false
-      loss_gate_enabled: false
-      loss_gate_window_size: 20
-      loss_gate_threshold: 0.1
-      unreachable_penalty: 2.0
-      hop_penalty: 0.0
-      delay_penalty: 0.1
-      compute_penalty: 0.0
-      hidden_dim: 64
-      num_layers: 2
-      dropout: 0.1
-      max_steps: 16
-  history_len: 8
-  forecast_horizon: 1
-  batch_size: 20
-  learning_rate: 1e-3
-  d_model: 64
-  nhead: 4
-  num_layers: 2
-  dim_feedforward: 64
-  dropout: 0.05
-  max_snapshots: 20000
-  warmup_snapshots: 10
-  update_every: 1
-  updates_per_step: 1
-  eval_every: 60
-  plan_every: 60
-  plan_top_k: 60
-  plan_delay_top_k: 30
-  plan_load_top_k: 30
-  repeat: 3
-  plan_max_candidate_expansions: 2000
-  plan_max_candidate_queue_size: 5000
-  plan_max_hops: 30
-  showPathError: False
-  plan_delay_top_k: 8
-  plan_load_top_k: 8
-  plan_max_candidate_expansions: 200000
-  plan_max_candidate_queue_size: 500000
-  plan_packet_size: 600000000.0
-  plan_computing_demand: 250000000000.0
-  plan_need_compute: True
-  plan_source: None
-  plan_destination: None
-  model_path: 'model_weights/transformer_forcase1.pth'
+    warmup_samples: 256
+    learning_rate: 1e-4
+    hidden_dim: 128
+    dropout: 0.1
+    max_grad_norm: 1.0
+    selection_enabled: true  # 是否允许 Critic 在门控就绪后重排跨域 LEO 贪心动作。
+    selection_min_samples: 512  # 完整 Critic 样本数门槛。
+    selection_min_train_steps: 100  # Critic 参数更新次数门槛；与样本门槛同时满足。
+    selection_weight: 0.2  # 标准化风险在 Q_norm - weight * risk_norm 中的权重。
+    selection_eps: 1e-6  # 候选分数标准化的数值稳定项。
+    loss_weights:
+      state: 1.0
+      success: 1.0
+      delay: 0.5
+      impact: 1.0
+    impact_weights:
+      queue: 0.1
+      link: 0.1
+      compute: 0.1
+      imbalance: 0.1
+  history_len: 8  # 全局时序 Transformer 输入的历史快照长度。
+  forecast_horizon: 1  # 全局时序 Transformer 向未来预测的快照步数。
+  batch_size: 20  # 全局时序 Transformer 每次训练使用的序列批量大小。
+  learning_rate: 1e-3  # 全局时序 Transformer 优化器学习率。
+  d_model: 64  # 全局时序 Transformer 的 token 隐藏维度。
+  nhead: 4  # 全局时序 Transformer 的多头注意力头数。
+  num_layers: 2  # 全局时序 Transformer 编码器层数。
+  dim_feedforward: 64  # 全局时序 Transformer 每层前馈网络维度。
+  dropout: 0.05  # 全局时序 Transformer 的 dropout 比例。
+  max_snapshots: 20000  # 全局网络状态快照回放池的最大容量。
+  warmup_snapshots: 10  # 开始训练全局 Transformer 前至少收集的快照数量。
+  update_every: 1  # 全局 Transformer 每隔多少次外层调用尝试更新。
+  updates_per_step: 1  # 每次触发时连续更新全局 Transformer 的次数。
+  eval_every: 60  # 每隔多少个快照/调用周期评估一次预测误差。
+  plan_every: 60  # 每隔多少个周期生成一次全局候选路径规划。
+  plan_top_k: 60  # 全局规划保留的综合评分候选数量。
+  plan_delay_top_k: 30  # 第一处时延候选截断值；后面的同名配置会覆盖此值。
+  plan_load_top_k: 30  # 第一处负载候选截断值；后面的同名配置会覆盖此值。
+  repeat: 5  # 主入口每个外层 step 调用全局 Transformer/MEO 更新的重复次数。
+  plan_max_candidate_expansions: 2000  # 第一处候选扩展上限；后面的同名配置会覆盖此值。
+  plan_max_candidate_queue_size: 5000  # 第一处候选队列上限；后面的同名配置会覆盖此值。
+  plan_max_hops: 30  # 全局规划允许的最大路径跳数。
+  showPathError: False  # 是否输出候选路径规划失败的详细信息。
+  plan_delay_top_k: 8  # 实际生效的时延候选截断值，覆盖前面的30。
+  plan_load_top_k: 8  # 实际生效的负载候选截断值，覆盖前面的30。
+  plan_max_candidate_expansions: 200000  # 实际生效的候选扩展次数上限，覆盖前面的2000。
+  plan_max_candidate_queue_size: 500000  # 实际生效的候选优先队列容量上限，覆盖前面的5000。
+  plan_packet_size: 600000000.0  # 无实时业务上下文时用于规划评估的默认包大小。
+  plan_computing_demand: 250000000000.0  # 无实时业务上下文时用于规划的默认计算需求。
+  plan_need_compute: True  # 默认规划任务是否需要执行计算。
+  plan_source: None  # 固定规划源节点；None 表示由系统自动选择。
+  plan_destination: None  # 固定规划目的节点；None 表示由系统自动选择。
+  model_path: 'model_weights/transformer_forcase1.pth'  # 全局时序 Transformer 权重的加载与保存路径。

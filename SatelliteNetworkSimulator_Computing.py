@@ -186,6 +186,7 @@ class Propagator_Computing(Propagator):
                 if next_hop in self.node_names:
                     success = self.satellites[next_hop].push_forward(packet)#尝试将数据包加入下一跳节点的转发队列
                     if success:
+                        packet.meo_previous_hop = node
                         self.logger.log(f"Time {self.env.now:.3f}: {next_hop}: Packet {(packet.source,packet.destination,packet.creation_time)} received by router. Memory remain: {self.satellites[next_hop].current_memory_occupy}.",detail=True)
                     else:
                         source, destination, hops, creation_time, size = packet.source, packet.destination, packet.hops, packet.creation_time, packet.size
@@ -3595,6 +3596,7 @@ class Satellite_with_Computing(Satellite):
 
     def _store_leo_policy_experience(
         self,
+        packet=None,
         task_type=0,
         packet_size=0.0,
         computing_demand=0.0,
@@ -3608,7 +3610,7 @@ class Satellite_with_Computing(Satellite):
         transformer = getattr(self.propagator, 'transformer_module', None)
         if transformer is None or not hasattr(transformer, 'store_leo_policy_experience'):
             return False
-        return transformer.store_leo_policy_experience(
+        policy_stored = transformer.store_leo_policy_experience(
             leo_satellite=self,
             task_type=task_type,
             packet_size=packet_size,
@@ -3620,8 +3622,32 @@ class Satellite_with_Computing(Satellite):
             next_hop_target=next_hop_target,
             compute_node_target=compute_node_target,
         )
+        critic_stored = False
+        if hasattr(transformer, 'record_critic_action'):
+            critic_stored = transformer.record_critic_action(
+                packet=packet,
+                leo_satellite=self,
+                task_type=task_type,
+                packet_size=packet_size,
+                computing_demand=computing_demand,
+                size_after_computing=size_after_computing,
+                is_computed=is_computed,
+                hops=hops,
+                next_hop_target=next_hop_target,
+                compute_node_target=compute_node_target,
+            )
+        return bool(policy_stored or critic_stored)
    
-    def get_next_hop(self, obs, destination, is_computed, task_context=None, task_edge_feats=None, return_score=False):
+    def get_next_hop(
+        self,
+        obs,
+        destination,
+        is_computed,
+        task_context=None,
+        task_edge_feats=None,
+        return_score=False,
+        critic_context=None,
+    ):
         """
         根据观测 obs 选择下一跳动作
         
@@ -3664,6 +3690,29 @@ class Satellite_with_Computing(Satellite):
             elif is_computed and action_index >= 4:
                 return float('-inf')
             return float(output[action_index].item())
+
+        def critic_selection(output):
+            context = critic_context if isinstance(critic_context, dict) else None
+            if context is None:
+                return None
+            transformer = getattr(self.propagator, 'transformer_module', None)
+            if transformer is None or not hasattr(transformer, 'select_leo_action_with_critic'):
+                return None
+            valid_actions = self._leo_valid_actions(is_computed, output.size(-1))
+            if not valid_actions:
+                return None
+            return transformer.select_leo_action_with_critic(
+                packet=context.get('packet'),
+                leo_satellite=self,
+                q_values=output.detach().cpu().numpy(),
+                valid_actions=valid_actions,
+                task_type=context.get('task_type', 0),
+                packet_size=context.get('packet_size', 0.0),
+                computing_demand=context.get('computing_demand', 0.0),
+                size_after_computing=context.get('size_after_computing', 0.0),
+                is_computed=is_computed,
+                hops=context.get('hops', 0),
+            )
 
         if 'DQN' in self.mode:
             if np.random.rand() <= self.epsilon:#以ε的概率随机选择动作，具体分两种子策略（各 50% 概率）
@@ -3714,17 +3763,25 @@ class Satellite_with_Computing(Satellite):
                 main_output = dqn_output()
                 """这里将观测传入模型中------------------------------------------------------------------------------------"""
                 # main_output 形状: (1, n_actions) 或 (n_actions,)
-                if self.leo_action_mask_enabled:
-                    if not self._leo_valid_actions(is_computed, main_output.size(-1)):
-                        return (5, float('-inf')) if return_score else 5
-                    main_output = self._mask_leo_action_scores(main_output, is_computed)
-                    next_index = torch.argmax(main_output).item()
-                elif not is_computed:
-                    next_index = torch.argmax(main_output).item()#选择所有动作（0-4）中 Q 值最大的动作
+                critic_result = critic_selection(main_output)
+                if critic_result is not None:
+                    next_index = int(critic_result['action'])
+                    selected_score = float(critic_result['score'])
                 else:
-                    # 已计算时，掩码掉最后一个动作（本地计算）
-                    next_index = torch.argmax(main_output[0:4]).item()
+                    selected_score = None
+                    if self.leo_action_mask_enabled:
+                        if not self._leo_valid_actions(is_computed, main_output.size(-1)):
+                            return (5, float('-inf')) if return_score else 5
+                        main_output = self._mask_leo_action_scores(main_output, is_computed)
+                        next_index = torch.argmax(main_output).item()
+                    elif not is_computed:
+                        next_index = torch.argmax(main_output).item()#选择所有动作（0-4）中 Q 值最大的动作
+                    else:
+                        # 已计算时，掩码掉最后一个动作（本地计算）
+                        next_index = torch.argmax(main_output[0:4]).item()
                 if return_score:
+                    if selected_score is not None:
+                        return int(next_index), selected_score
                     return int(next_index), dqn_action_score(main_output, int(next_index))
                 return next_index
             """这里动作集合通常包含：选择某个 neighbor(index)、选择本地计算(index 4)、或其他(index 5 表示错误/放弃）。"""
@@ -3946,6 +4003,13 @@ class Satellite_with_Computing(Satellite):
                                 if len(previous_domains) >= 2:
                                     previous_domain = previous_domains[-2]
                         excluded_domains = {previous_domain} if previous_domain is not None else None
+                        if meo_router is not None:
+                            meo_router.record_executed_boundary(
+                                packet=packet,
+                                meo_satellite=self.propagator.satellites[self.masterMeo],
+                                reached_node=self.name,
+                                previous_node=getattr(packet, 'meo_previous_hop', None),
+                            )
                         plan = self.propagator.satellites[self.masterMeo].recommend_path(
                             src=self.name,
                             dst=destination,
@@ -4310,6 +4374,14 @@ class Satellite_with_Computing(Satellite):
                                     candidate['task_context'],
                                     candidate['task_edge_feats'],
                                     return_score=True,
+                                    critic_context={
+                                        'packet': packet,
+                                        'task_type': type,
+                                        'packet_size': size,
+                                        'computing_demand': computing_demand,
+                                        'size_after_computing': size_after_computing,
+                                        'hops': hops,
+                                    },
                                 )
                                 candidate_score = float(candidate_score)
                                 if np.isnan(candidate_score):
@@ -4321,7 +4393,21 @@ class Satellite_with_Computing(Satellite):
                             current_task_context = selected_candidate['task_context']
                             current_task_edge_feats = selected_candidate['task_edge_feats']
                         else:
-                            action = self.get_next_hop(current_obs, destination, is_computed, current_task_context, current_task_edge_feats)
+                            action = self.get_next_hop(
+                                current_obs,
+                                destination,
+                                is_computed,
+                                current_task_context,
+                                current_task_edge_feats,
+                                critic_context={
+                                    'packet': packet,
+                                    'task_type': type,
+                                    'packet_size': size,
+                                    'computing_demand': computing_demand,
+                                    'size_after_computing': size_after_computing,
+                                    'hops': hops,
+                                },
+                            )
                         """调用策略网络 get_next_hop，基于观测状态与目标 destination 返回 action"""
                         if 'PPO' in self.mode:
                             next_index = action[0]
@@ -4352,6 +4438,7 @@ class Satellite_with_Computing(Satellite):
                             reward = self.reward_function.normal_reward(self.env.now-last_time,1-self.current_memory_occupy/self.memory)
                             next_hop = self.neighbors[next_index]
                             self._store_leo_policy_experience(
+                                packet=packet,
                                 task_type=type,
                                 packet_size=size,
                                 computing_demand=computing_demand,
@@ -4374,6 +4461,7 @@ class Satellite_with_Computing(Satellite):
                             reward = self.reward_function.normal_reward(self.env.now-last_time,1-self.current_memory_occupy/self.memory)
                             compute_chunk = self._planned_compute_chunk(packet, computing_demand)
                             self._store_leo_policy_experience(
+                                packet=packet,
                                 task_type=type,
                                 packet_size=size,
                                 computing_demand=computing_demand,

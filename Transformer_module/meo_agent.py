@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .leo_attention_predictor import LEOAttentionDecisionPredictor, batch_from_networkx
+from .meo_observation import GLOBAL_FEATURE_DIM, TASK_GLOBAL_FEATURE_DIM
 
 
 class _MLPQNetwork(nn.Module):
@@ -27,6 +28,109 @@ class _MLPQNetwork(nn.Module):
 
     def forward(self, x):
         return self.net(x)
+
+
+class _NeighborSelfAttentionQNetwork(nn.Module):
+    """Permutation-equivariant Q network over fixed-width neighbor rows."""
+
+    CONTEXT_DIM = GLOBAL_FEATURE_DIM + TASK_GLOBAL_FEATURE_DIM
+
+    def __init__(
+        self,
+        state_dim: int,
+        n_actions: int,
+        hidden_dim: int,
+        num_heads: int,
+        num_layers: int,
+        feedforward_dim: int,
+        dropout: float,
+    ):
+        super().__init__()
+        if int(n_actions) < 1:
+            raise ValueError("MEO n_actions must be at least 1")
+        if num_heads < 1:
+            raise ValueError("MEO attention_heads must be at least 1")
+        remaining_dim = int(state_dim) - self.CONTEXT_DIM
+        if remaining_dim <= 0 or remaining_dim % int(n_actions) != 0:
+            raise ValueError(
+                "self_attention MEO state_dim must equal 9 context features plus "
+                f"an equal-width row for each of {n_actions} neighbors; got state_dim={state_dim}"
+            )
+        if hidden_dim % num_heads != 0:
+            raise ValueError(
+                f"MEO attention hidden_dim ({hidden_dim}) must be divisible by attention_heads ({num_heads})"
+            )
+        if num_layers < 1:
+            raise ValueError("MEO attention_layers must be at least 1")
+        if feedforward_dim < 1:
+            raise ValueError("MEO attention_ff_dim must be at least 1")
+        if not 0.0 <= dropout < 1.0:
+            raise ValueError("MEO attention_dropout must be in [0, 1)")
+
+        self.state_dim = int(state_dim)
+        self.n_actions = int(n_actions)
+        self.neighbor_dim = remaining_dim // self.n_actions
+        self.context_encoder = nn.Sequential(
+            nn.Linear(self.CONTEXT_DIM, hidden_dim),
+            nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
+        )
+        self.neighbor_encoder = nn.Sequential(
+            nn.Linear(self.neighbor_dim + hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
+        )
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=hidden_dim,
+            nhead=num_heads,
+            dim_feedforward=feedforward_dim,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+        )
+        self.attention = nn.TransformerEncoder(
+            encoder_layer,
+            num_layers=num_layers,
+            enable_nested_tensor=False,
+        )
+        self.q_head = nn.Sequential(
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, x):
+        if x.ndim != 2 or x.shape[1] != self.state_dim:
+            raise ValueError(
+                f"Expected MEO state batch with shape [batch, {self.state_dim}], got {tuple(x.shape)}"
+            )
+        context_features = x[:, : self.CONTEXT_DIM]
+        neighbor_rows = x[:, self.CONTEXT_DIM :].reshape(
+            x.shape[0], self.n_actions, self.neighbor_dim
+        )
+        padding_mask = neighbor_rows.abs().sum(dim=-1).eq(0)
+
+        context = self.context_encoder(context_features)
+        expanded_context = context.unsqueeze(1).expand(-1, self.n_actions, -1)
+        neighbor_tokens = self.neighbor_encoder(
+            torch.cat([neighbor_rows, expanded_context], dim=-1)
+        )
+
+        # PyTorch attention cannot safely consume a row where every token is
+        # padding. Temporarily expose one dummy token, then zero every padded
+        # output. This is important for terminal transitions whose next state
+        # is the all-zero sentinel.
+        safe_padding_mask = padding_mask.clone()
+        all_padding = safe_padding_mask.all(dim=1)
+        if torch.any(all_padding):
+            safe_padding_mask[all_padding, 0] = False
+        attended = self.attention(
+            neighbor_tokens,
+            src_key_padding_mask=safe_padding_mask,
+        )
+        attended = attended.masked_fill(padding_mask.unsqueeze(-1), 0.0)
+        q_inputs = torch.cat([attended, expanded_context], dim=-1)
+        return self.q_head(q_inputs).squeeze(-1)
 
 
 class MEODomainRoutingAgent:
@@ -46,8 +150,26 @@ class MEODomainRoutingAgent:
         self.train_steps = 0
 
         hidden_dim = int(cfg.get("hidden_dim", 128))
-        self.online_net = _MLPQNetwork(self.state_dim, self.n_actions, hidden_dim).to(self.device)
-        self.target_net = _MLPQNetwork(self.state_dim, self.n_actions, hidden_dim).to(self.device)
+        self.encoder_type = str(cfg.get("encoder_type", "mlp")).strip().lower()
+        if self.encoder_type not in {"mlp", "self_attention"}:
+            raise ValueError(
+                f"Unsupported MEO encoder_type {self.encoder_type!r}; expected 'mlp' or 'self_attention'"
+            )
+        self.network_config = {
+            "encoder_type": self.encoder_type,
+            "state_dim": self.state_dim,
+            "n_actions": self.n_actions,
+            "hidden_dim": hidden_dim,
+        }
+        if self.encoder_type == "self_attention":
+            self.network_config.update({
+                "attention_heads": int(cfg.get("attention_heads", 4)),
+                "attention_layers": int(cfg.get("attention_layers", 2)),
+                "attention_ff_dim": int(cfg.get("attention_ff_dim", hidden_dim * 2)),
+                "attention_dropout": float(cfg.get("attention_dropout", 0.0)),
+            })
+        self.online_net = self._build_q_network().to(self.device)
+        self.target_net = self._build_q_network().to(self.device)
         self.target_net.load_state_dict(self.online_net.state_dict())
         self.target_net.eval()
         self.optimizer = torch.optim.Adam(self.online_net.parameters(), lr=float(cfg.get("lr", 1e-4)))
@@ -92,6 +214,23 @@ class MEODomainRoutingAgent:
                     lr=float(leo_cfg.get("lr", 1e-4)),
                 )
             self._load_leo_policy(leo_cfg.get("model_path"))
+
+    def _build_q_network(self) -> nn.Module:
+        if self.encoder_type == "mlp":
+            return _MLPQNetwork(
+                self.state_dim,
+                self.n_actions,
+                self.network_config["hidden_dim"],
+            )
+        return _NeighborSelfAttentionQNetwork(
+            state_dim=self.state_dim,
+            n_actions=self.n_actions,
+            hidden_dim=self.network_config["hidden_dim"],
+            num_heads=self.network_config["attention_heads"],
+            num_layers=self.network_config["attention_layers"],
+            feedforward_dim=self.network_config["attention_ff_dim"],
+            dropout=self.network_config["attention_dropout"],
+        )
 
     def act(
         self,
@@ -140,8 +279,12 @@ class MEODomainRoutingAgent:
 
     def q_values(self, state: Sequence[float], action_mask: Optional[Sequence[bool]] = None) -> np.ndarray:
         state_tensor = torch.as_tensor(np.asarray(state, dtype=np.float32), dtype=torch.float32, device=self.device).view(1, -1)
+        was_training = self.online_net.training
+        self.online_net.eval()
         with torch.no_grad():
             q_values = self.online_net(state_tensor).squeeze(0).detach().cpu().numpy().astype(np.float32)
+        if was_training:
+            self.online_net.train()
         if action_mask is not None:
             mask = np.asarray(action_mask, dtype=bool).reshape(-1)
             for idx in range(min(len(mask), self.n_actions)):
@@ -305,6 +448,8 @@ class MEODomainRoutingAgent:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         torch.save({
             "state_dim": self.state_dim,
+            "encoder_type": self.encoder_type,
+            "network_config": dict(self.network_config),
             "online": self.online_net.state_dict(),
             "target": self.target_net.state_dict(),
             "optimizer": self.optimizer.state_dict(),
@@ -328,13 +473,50 @@ class MEODomainRoutingAgent:
         checkpoint = torch.load(path, map_location=self.device)
         if int(checkpoint.get("state_dim", self.state_dim)) != self.state_dim:
             return False
-        self.online_net.load_state_dict(checkpoint["online"])
-        self.target_net.load_state_dict(checkpoint.get("target", checkpoint["online"]))
+        checkpoint_encoder_type = str(checkpoint.get("encoder_type", "mlp")).strip().lower()
+        if checkpoint_encoder_type != self.encoder_type:
+            print(
+                f"Warning: incompatible MEO checkpoint {path!r}: encoder_type "
+                f"is {checkpoint_encoder_type!r}, expected {self.encoder_type!r}."
+            )
+            return False
+        checkpoint_network_config = checkpoint.get("network_config")
+        if (
+            self.encoder_type == "self_attention"
+            and checkpoint_network_config != self.network_config
+        ):
+            print(
+                f"Warning: incompatible MEO checkpoint {path!r}: attention configuration differs."
+            )
+            return False
+        online_state = checkpoint.get("online")
+        target_state = checkpoint.get("target", online_state)
+        if not self._q_state_dict_is_compatible(self.online_net, online_state):
+            print(f"Warning: incompatible MEO checkpoint {path!r}: online network structure differs.")
+            return False
+        if not self._q_state_dict_is_compatible(self.target_net, target_state):
+            print(f"Warning: incompatible MEO checkpoint {path!r}: target network structure differs.")
+            return False
+        self.online_net.load_state_dict(online_state)
+        self.target_net.load_state_dict(target_state)
         if checkpoint.get("optimizer") is not None:
             self.optimizer.load_state_dict(checkpoint["optimizer"])
         self.train_steps = int(checkpoint.get("train_steps", 0))
         self.epsilon = float(checkpoint.get("epsilon", self.epsilon))
         return True
+
+    @staticmethod
+    def _q_state_dict_is_compatible(model: nn.Module, state_dict) -> bool:
+        if not isinstance(state_dict, Mapping):
+            return False
+        current_state = model.state_dict()
+        return (
+            set(state_dict.keys()) == set(current_state.keys())
+            and all(
+                tuple(state_dict[key].shape) == tuple(current_state[key].shape)
+                for key in current_state
+            )
+        )
 
     def _load_leo_policy(self, path: Optional[str]) -> bool:
         if self.leo_policy is None or not path or not os.path.exists(path):

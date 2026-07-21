@@ -616,8 +616,10 @@ def test_meo_router_returns_local_plan_shape_and_replay_update():
 
     assert plan is not None
     assert plan["domains"] in (["MEO_A", "MEO_B"], ["MEO_A", "MEO_D"])
-    assert plan["path"][0] == "a0"
-    assert plan["path"][-1] in ("b0", "d0")
+    assert plan["path"] == []
+    assert plan["transitions"] == []
+    assert plan["score"] == 0.0
+    assert plan["domain_entries"]["MEO_A"] == {"entry": "a0", "exit": None}
     assert plan["candidate_count"] == 2
     assert plan["meo_policy"]["state"].shape == (meo_state_dim(True),)
     assert plan["meo_policy"]["task_context"]["computing_demand"] == 3.0
@@ -913,7 +915,7 @@ def test_meo_agent_leo_rollout_delay_penalty_changes_action_selection():
     assert agent.last_leo_rollout_scores[1]["predicted_delay"] == 0.1
 
 
-def test_meo_router_recommend_path_writes_leo_rollout_into_plan():
+def test_meo_router_recommend_path_ignores_internal_leo_rollout():
     router = MEODomainRouter({
         "meo_exit_enabled": True,
         "enabled": True,
@@ -945,14 +947,95 @@ def test_meo_router_recommend_path_writes_leo_rollout_into_plan():
 
     assert plan is not None
     assert plan["meo_policy"]["action"] == 0
-    assert plan["leo_policy_rollout"]["reached_target"] is True
-    assert plan["path"][:3] == ["a0", "a1", "b0"]
-    assert plan["compute_flags"][:2] == [1, 0]
-    assert plan["computing_leo"] == "a0"
-    first_call = router.agent.leo_policy.calls[0]
-    assert first_call[1]["packet_size"] == 1.0
-    assert first_call[1]["computing_demand"] == 0.3
-    assert first_call[2]["edge_target_distances"][("a0", "a1")] == 0.0
+    assert plan["boundary_sat"] == ["b0"]
+    assert plan["path"] == []
+    assert plan["transitions"] == []
+    assert "leo_policy_rollout" not in plan
+    assert "compute_flags" not in plan
+    assert "computing_leo" not in plan
+    assert router.agent.leo_policy.calls == []
+
+
+def test_meo_router_records_exact_executed_boundary_link():
+    router = MEODomainRouter({
+        "meo_exit_enabled": True,
+        "use_meo_aggregation": True,
+        "meo_agent": {"epsilon": 0.0},
+    }, device="cpu", transformer_enabled=False)
+    meo = _meo_satellite()
+    _force_meo_action(router.agent, 0)
+    graph = meo.inter_domain_graph
+    graph["MEO_A"]["MEO_B"]["boundary_links"][("a2", "b1")] = {
+        "source_domain": "MEO_A",
+        "target_domain": "MEO_B",
+        "source_boundary": "a2",
+        "target_boundary": "b1",
+        "quality_cost": 0.9,
+        "link_load": 2.0,
+        "delay": 0.7,
+    }
+    plan = router.recommend_path(meo, "a0", "c0", packet_size=1.0)
+    packet = SimpleNamespace(meo_decision_trace=None, meo_decision_traces=[])
+    router.attach_decision(packet, plan)
+
+    assert router.record_executed_boundary(packet, meo, "b1", previous_node="a2") is True
+
+    trace = packet.meo_decision_trace
+    assert trace["score"] == 0.9
+    assert trace["transitions"] == [{
+        "from_domain": "MEO_A",
+        "to_domain": "MEO_B",
+        "source_boundary": "a2",
+        "target_boundary": "b1",
+        "quality_cost": 0.9,
+        "link_load": 2.0,
+        "link_load_ratio": 0.2,
+        "delay": 0.7,
+    }]
+
+
+def test_meo_router_records_reversed_and_fallback_boundary_link():
+    router = MEODomainRouter({"meo_exit_enabled": True}, device="cpu", transformer_enabled=False)
+    graph = nx.Graph()
+    graph.add_edge("MEO_A", "MEO_B", boundary_links={
+        ("b0", "a1"): {
+            "source_domain": "MEO_B",
+            "target_domain": "MEO_A",
+            "source_boundary": "b0",
+            "target_boundary": "a1",
+            "quality_cost": 0.4,
+            "link_load": 1.0,
+            "delay": 0.2,
+        },
+    })
+    meo = SimpleNamespace(inter_domain_graph=graph, transmission_rate=10.0)
+    trace = {
+        "current_domain": "MEO_A",
+        "next_domain": "MEO_B",
+        "transitions": [],
+        "score": 0.0,
+    }
+    packet = SimpleNamespace(meo_decision_trace=trace, meo_decision_traces=[trace])
+
+    assert router.record_executed_boundary(packet, meo, "b0", previous_node=None) is True
+    assert trace["transitions"][0]["source_boundary"] == "a1"
+    assert trace["transitions"][0]["target_boundary"] == "b0"
+
+
+def test_meo_router_leaves_trace_unchanged_when_executed_boundary_is_unknown():
+    router = MEODomainRouter({"meo_exit_enabled": True}, device="cpu", transformer_enabled=False)
+    meo = _meo_satellite()
+    trace = {
+        "current_domain": "MEO_A",
+        "next_domain": "MEO_B",
+        "transitions": [],
+        "score": 0.0,
+    }
+    packet = SimpleNamespace(meo_decision_trace=trace, meo_decision_traces=[trace])
+
+    assert router.record_executed_boundary(packet, meo, "unknown", previous_node="unknown") is False
+    assert trace["transitions"] == []
+    assert trace["score"] == 0.0
 
 
 def test_meo_router_store_leo_policy_experience_for_forward_and_compute():
@@ -1239,10 +1322,204 @@ def test_meo_agent_epsilon_decays_after_successful_update():
     router.attach_decision(packet, plan)
     router.finish_decision(packet, reward=1.0, done=True)
 
+    assert router.updates_per_step == 1
     assert router.update_if_ready() is not None
+    assert router.agent.train_steps == 1
+    assert router.update_count == 1
+    assert router.interval_updates == 1
     assert router.agent.epsilon == 0.25
     assert router.update_if_ready() is None
     assert router.agent.epsilon == 0.25
+
+
+def test_meo_agent_runs_multiple_updates_per_step_and_returns_mean_loss():
+    router = MEODomainRouter({
+        "meo_exit_enabled": True,
+        "use_meo_aggregation": True,
+        "meo_agent": {
+            "epsilon": 0.8,
+            "min_epsilon": 0.1,
+            "epsilon_decay": 0.5,
+            "batch_size": 1,
+            "buffer_size": 10,
+            "updates_per_step": 8,
+        },
+    }, device="cpu", transformer_enabled=False)
+    state = np.zeros(meo_state_dim(True), dtype=np.float32)
+    action_mask = np.ones(4, dtype=np.float32)
+    router.agent.store_experience(state, 0, 1.0, state, True, action_mask)
+    router.decision_count = 1
+
+    mean_loss = router.update_if_ready()
+
+    assert router.agent.train_steps == 8
+    assert router.update_count == 8
+    assert router.interval_updates == 8
+    assert len(router.interval_losses) == 8
+    assert np.isclose(mean_loss, np.mean(router.interval_losses))
+    assert np.isclose(router.last_loss, router.interval_losses[-1])
+    assert np.isclose(router.agent.epsilon, 0.1)
+
+    assert router.update_if_ready() is None
+    assert router.agent.train_steps == 8
+    assert router.update_count == 8
+    assert np.isclose(router.agent.epsilon, 0.1)
+
+
+def test_meo_agent_consumes_update_trigger_when_replay_is_insufficient():
+    router = MEODomainRouter({
+        "meo_exit_enabled": True,
+        "use_meo_aggregation": True,
+        "meo_agent": {
+            "epsilon": 0.8,
+            "min_epsilon": 0.1,
+            "epsilon_decay": 0.5,
+            "batch_size": 2,
+            "buffer_size": 10,
+            "updates_per_step": 8,
+        },
+    }, device="cpu", transformer_enabled=False)
+    router.decision_count = 1
+
+    assert router.update_if_ready() is None
+    assert router.last_update_decision_count == 1
+    assert router.agent.train_steps == 0
+    assert router.update_count == 0
+    assert router.interval_updates == 0
+    assert router.interval_losses == []
+    assert np.isclose(router.agent.epsilon, 0.8)
+
+    assert router.update_if_ready() is None
+    assert router.agent.train_steps == 0
+    assert np.isclose(router.agent.epsilon, 0.8)
+
+
+def test_meo_agent_clamps_updates_per_step_to_one():
+    router = MEODomainRouter({
+        "meo_exit_enabled": True,
+        "meo_agent": {"updates_per_step": 0},
+    }, device="cpu", transformer_enabled=False)
+
+    assert router.updates_per_step == 1
+
+
+def _attention_agent(state_dim, **overrides):
+    cfg = {
+        "encoder_type": "self_attention",
+        "n_actions": 4,
+        "hidden_dim": 16,
+        "attention_heads": 4,
+        "attention_layers": 1,
+        "attention_ff_dim": 32,
+        "attention_dropout": 0.0,
+        "epsilon": 0.0,
+        **overrides,
+    }
+    return MEODomainRoutingAgent(state_dim=state_dim, cfg=cfg, device="cpu")
+
+
+def test_meo_attention_encoder_supports_aggregate_raw_and_zero_states():
+    for use_aggregation in (True, False):
+        state_dim = meo_state_dim(use_aggregation)
+        agent = _attention_agent(state_dim)
+        random_state = torch.randn(3, state_dim)
+        zero_state = torch.zeros(2, state_dim)
+
+        random_q = agent.online_net(random_state)
+        zero_q = agent.online_net(zero_state)
+
+        assert random_q.shape == (3, 4)
+        assert zero_q.shape == (2, 4)
+        assert torch.isfinite(random_q).all()
+        assert torch.isfinite(zero_q).all()
+
+
+def test_meo_attention_encoder_is_neighbor_permutation_equivariant():
+    state_dim = meo_state_dim(True)
+    agent = _attention_agent(state_dim)
+    agent.online_net.eval()
+    context_dim = GLOBAL_FEATURE_DIM + TASK_GLOBAL_FEATURE_DIM
+    neighbor_dim = (state_dim - context_dim) // 4
+    context = torch.linspace(0.1, 0.9, context_dim)
+    neighbors = torch.arange(1, 4 * neighbor_dim + 1, dtype=torch.float32).reshape(4, neighbor_dim) / 10.0
+    state = torch.cat([context, neighbors.reshape(-1)]).unsqueeze(0)
+    permutation = torch.tensor([2, 0, 3, 1])
+    permuted_state = torch.cat([context, neighbors[permutation].reshape(-1)]).unsqueeze(0)
+
+    with torch.no_grad():
+        q_values = agent.online_net(state).squeeze(0)
+        permuted_q_values = agent.online_net(permuted_state).squeeze(0)
+
+    assert torch.allclose(permuted_q_values, q_values[permutation], atol=1e-6, rtol=1e-6)
+
+
+def test_meo_attention_agent_masks_actions_and_updates_with_terminal_zero_state():
+    state_dim = meo_state_dim(True)
+    agent = _attention_agent(
+        state_dim,
+        batch_size=2,
+        buffer_size=10,
+        target_update_freq=1,
+    )
+    state = np.linspace(0.1, 1.0, state_dim, dtype=np.float32)
+    zero_state = np.zeros(state_dim, dtype=np.float32)
+    action_mask = np.asarray([1.0, 0.0, 1.0, 0.0], dtype=np.float32)
+
+    action, _, q_values = agent.act(state, action_mask, explore=False)
+    assert action in (0, 2)
+    assert np.isneginf(q_values[1])
+    assert np.isneginf(q_values[3])
+
+    agent.store_experience(state, 0, 0.5, state, False, action_mask)
+    agent.store_experience(state, 2, -0.5, zero_state, True, np.zeros(4, dtype=np.float32))
+    loss = agent.update()
+
+    assert loss is not None
+    assert np.isfinite(loss)
+    assert agent.train_steps == 1
+    for online_value, target_value in zip(
+        agent.online_net.state_dict().values(), agent.target_net.state_dict().values()
+    ):
+        assert torch.equal(online_value, target_value)
+
+
+def test_meo_q_network_checkpoints_round_trip_and_reject_other_encoder(tmp_path):
+    state_dim = meo_state_dim(True)
+    attention_path = tmp_path / "attention_meo.pt"
+    attention = _attention_agent(state_dim)
+    attention.train_steps = 7
+    attention.epsilon = 0.23
+    attention.save(str(attention_path))
+
+    restored_attention = _attention_agent(state_dim)
+    assert restored_attention.load(str(attention_path)) is True
+    assert restored_attention.train_steps == 7
+    assert np.isclose(restored_attention.epsilon, 0.23)
+    for original, restored in zip(
+        attention.online_net.state_dict().values(),
+        restored_attention.online_net.state_dict().values(),
+    ):
+        assert torch.equal(original, restored)
+
+    mlp = MEODomainRoutingAgent(
+        state_dim=state_dim,
+        cfg={"encoder_type": "mlp", "n_actions": 4, "hidden_dim": 16},
+        device="cpu",
+    )
+    mlp_before = {key: value.clone() for key, value in mlp.online_net.state_dict().items()}
+    assert mlp.load(str(attention_path)) is False
+    for key, value in mlp.online_net.state_dict().items():
+        assert torch.equal(value, mlp_before[key])
+
+    mlp_path = tmp_path / "mlp_meo.pt"
+    mlp.save(str(mlp_path))
+    restored_mlp = MEODomainRoutingAgent(
+        state_dim=state_dim,
+        cfg={"encoder_type": "mlp", "n_actions": 4, "hidden_dim": 16},
+        device="cpu",
+    )
+    assert restored_mlp.load(str(mlp_path)) is True
+    assert restored_attention.load(str(mlp_path)) is False
 
 
 def test_adjacent_domain_can_return_final_local_hop_when_called():
@@ -1251,6 +1528,7 @@ def test_adjacent_domain_can_return_final_local_hop_when_called():
         "meo_agent": {"epsilon": 0.0},
     }, device="cpu", transformer_enabled=False)
     meo = _meo_satellite()
+    _force_meo_action(router.agent, 0)
 
     plan = router.recommend_path(meo, "a0", "b0", packet_size=1.0)
 

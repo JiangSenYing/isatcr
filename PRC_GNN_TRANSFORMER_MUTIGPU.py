@@ -445,7 +445,7 @@ def main():
     transformer_loaded = False
     transformer_prediction_enabled = bool(transformer_cfg.get('enabled', True))
     meo_exit_enabled = bool(transformer_cfg.get('meo_exit_enabled', transformer_prediction_enabled))
-    if transformer_prediction_enabled or meo_exit_enabled:
+    if transformer_prediction_enabled or meo_exit_enabled or transformer_cfg.get('critic', {}).get('enabled', False):
         transformer_trainer = GlobalTransformerTrainer(transformer_cfg, transformer_device)
         print("Creating Global Transformer/MEO manager:")
         print(f"  - meo_exit_enabled: {transformer_trainer.meo_exit_enabled}")
@@ -551,6 +551,8 @@ def main():
         print(f"Round {k+1}/{rounds} - {datetime.now().strftime('%H:%M:%S')}")
         print(f"{'='*50}")
         
+        if transformer_trainer is not None:
+            transformer_trainer.reset_critic_round()
         env.reset(begin_time, config['environment']['controlDomainNumber'], config['environment']['MinimuElevationAngle'], config['environment']['ShowLink'],)
         agent.reset_hidden()
         if transformer_trainer is not None:
@@ -663,6 +665,15 @@ def main():
                             'meo_exit_entropy': parts.get('meo_exit_entropy'),
                             'meo_exit_replay_size': parts.get('meo_exit_replay_size'),
                         }
+                    critic = getattr(transformer_trainer, 'critic', None) if transformer_trainer is not None else None
+                    if critic is not None and getattr(critic, 'enabled', False):
+                        critic_log = critic.format_training_log(
+                            step=t + 1,
+                            total_steps=n_steps,
+                            round_idx=k + 1,
+                        )
+                        if critic_log:
+                            env.print_and_save(critic_log)
         
         # 保存模型
         if phase == 'train' and model_path:

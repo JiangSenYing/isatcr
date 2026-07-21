@@ -7,6 +7,8 @@ from typing import Dict, List, Optional
 import numpy as np
 import torch
 
+from critic_network import GlobalCriticTrainer, JointAction
+
 from .transformer_forecaster import (
     GlobalStateExtractor,
     SatelliteLoadTransformer,
@@ -84,6 +86,8 @@ class GlobalTransformerTrainer:
         self.last_metrics = {}
         self.last_plan = None
         self.meo_router = MEODomainRouter(cfg, device=str(device), transformer_enabled=self.transformer_enabled)
+        self.critic = GlobalCriticTrainer(cfg.get('critic', {}), device=str(device))
+        self.last_critic_loss = None
 
     def initialize(self, snapshot) -> None:
         """根据第一帧快照的特征维度创建 Transformer、优化器和路径规划器。"""
@@ -158,6 +162,7 @@ class GlobalTransformerTrainer:
             self.snapshots.append(aligned)
             if len(self.snapshots) > self.max_snapshots:
                 self.snapshots = self.snapshots[-self.max_snapshots:]
+        self.critic.observe_snapshot(aligned)
         if self.planner is not None:
             if same_time and self.planner.history:
                 self.planner.history[-1] = aligned
@@ -201,6 +206,7 @@ class GlobalTransformerTrainer:
 
     def update_if_ready(self) -> Optional[float]:
         """在达到更新间隔且数据充足时执行训练，返回平均 loss；否则返回 None。"""
+        self.last_critic_loss = self.critic.update_if_ready()
         if not self.transformer_enabled:
             return None, None
         if self.step_count % self.update_every != 0 or not self.can_update():
@@ -406,8 +412,212 @@ class GlobalTransformerTrainer:
 
     def finish_meo_decision(self, packet, reward, done=True, meo_result=None):
         """把包级终局奖励回传给 MEO Agent。"""
+        result = str(meo_result or getattr(packet, 'meo_result', '') or '').lower()
+        failed_results = {'memory_drop', 'link_drop', 'failed', 'unfinished', 'compute_missing'}
+        success = result.startswith('reached') or (float(reward) > 0.0 and result not in failed_results)
+        terminal_value = getattr(packet, 'meo_terminal_time', None)
+        creation_value = getattr(packet, 'creation_time', None)
+        terminal_time = float(terminal_value if terminal_value is not None else (creation_value or 0.0))
+        creation_time = float(creation_value if creation_value is not None else terminal_time)
+        self.critic.finish_packet(
+            packet,
+            terminal_reward=float(reward),
+            success=success,
+            delay=max(0.0, terminal_time - creation_time),
+        )
         if self.meo_router is not None:
             self.meo_router.finish_decision(packet, reward, done=done, meo_result=meo_result)
+
+    def record_critic_action(
+        self,
+        packet,
+        leo_satellite,
+        next_hop_target=None,
+        compute_node_target=None,
+        task_type=0,
+        packet_size=0.0,
+        computing_demand=0.0,
+        size_after_computing=0.0,
+        is_computed=False,
+        hops=0,
+    ):
+        """Record one actually executed LEO step under an active cross-domain MEO trace."""
+        if not self.critic.enabled or packet is None or not self.snapshots:
+            return False
+        trace = getattr(packet, 'meo_decision_trace', None)
+        if not isinstance(trace, dict) or not trace.get('decision_id'):
+            return False
+        if not trace.get('current_domain') or not trace.get('next_domain'):
+            return False
+        action_type = 1 if compute_node_target is not None else 0
+        target_leo = compute_node_target if action_type == 1 else next_hop_target
+        if target_leo is None:
+            return False
+        action = self._build_critic_joint_action(
+            packet=packet,
+            leo_satellite=leo_satellite,
+            target_leo=target_leo,
+            action_type=action_type,
+            task_type=task_type,
+            packet_size=packet_size,
+            computing_demand=computing_demand,
+            size_after_computing=size_after_computing,
+            is_computed=is_computed,
+            hops=hops,
+        )
+        if action is None:
+            return False
+        action_time = float(getattr(getattr(leo_satellite, 'env', None), 'now', 0.0) or 0.0)
+        event_id = self.critic.start_event(packet, self.snapshots[-1], action, action_time)
+        if event_id is None:
+            return False
+        prediction = self.critic.predict(self.snapshots[-1], action)
+        if prediction is not None:
+            prediction = dict(prediction)
+            prediction.update({
+                'event_id': event_id,
+                'leo_action': 'compute' if action_type == 1 else 'forward',
+                'current_leo': action.current_leo,
+                'target_leo': action.target_leo,
+            })
+            trace.setdefault('global_critic_predictions', []).append(prediction)
+        return True
+
+    def select_leo_action_with_critic(
+        self,
+        packet,
+        leo_satellite,
+        q_values,
+        valid_actions,
+        task_type=0,
+        packet_size=0.0,
+        computing_demand=0.0,
+        size_after_computing=0.0,
+        is_computed=False,
+        hops=0,
+    ):
+        """Optionally rerank one greedy LEO decision under an active MEO trace."""
+        if not self.critic.enabled or packet is None or not self.snapshots:
+            return None
+        trace = getattr(packet, 'meo_decision_trace', None)
+        if not isinstance(trace, dict) or not trace.get('decision_id'):
+            return None
+        if not trace.get('current_domain') or not trace.get('next_domain'):
+            return None
+
+        q_values = np.asarray(q_values, dtype=np.float32).reshape(-1)
+        candidates = []
+        candidate_q = []
+        candidate_actions = []
+        neighbors = list(getattr(leo_satellite, 'neighbors', []) or [])
+        for action_index in valid_actions:
+            action_index = int(action_index)
+            if action_index < 0 or action_index >= q_values.size:
+                continue
+            if action_index == 4 and not is_computed:
+                target_leo = str(getattr(leo_satellite, 'name', ''))
+                action_type = 1
+            elif 0 <= action_index < min(len(neighbors), 4):
+                target_leo = str(neighbors[action_index])
+                action_type = 0
+            else:
+                continue
+            joint_action = self._build_critic_joint_action(
+                packet=packet,
+                leo_satellite=leo_satellite,
+                target_leo=target_leo,
+                action_type=action_type,
+                task_type=task_type,
+                packet_size=packet_size,
+                computing_demand=computing_demand,
+                size_after_computing=size_after_computing,
+                is_computed=is_computed,
+                hops=hops,
+            )
+            if joint_action is not None:
+                candidates.append(joint_action)
+                candidate_q.append(float(q_values[action_index]))
+                candidate_actions.append(action_index)
+        if not candidates:
+            return None
+
+        ranked = self.critic.rank_actions(self.snapshots[-1], candidates, candidate_q)
+        if ranked is None:
+            return None
+        selected_position = int(ranked['selected_index'])
+        return {
+            'action': int(candidate_actions[selected_position]),
+            'score': float(ranked['combined_scores'][selected_position]),
+            'q_score': float(ranked['q_scores'][selected_position]),
+            'risk': float(ranked['risks'][selected_position]),
+            'original_action': int(candidate_actions[int(ranked['original_index'])]),
+        }
+
+    def _build_critic_joint_action(
+        self,
+        packet,
+        leo_satellite,
+        target_leo,
+        action_type,
+        task_type=0,
+        packet_size=0.0,
+        computing_demand=0.0,
+        size_after_computing=0.0,
+        is_computed=False,
+        hops=0,
+    ):
+        trace = getattr(packet, 'meo_decision_trace', None)
+        if not isinstance(trace, dict) or not trace.get('decision_id'):
+            return None
+        if not trace.get('current_domain') or not trace.get('next_domain'):
+            return None
+        max_size = max(float(getattr(leo_satellite, 'max_size', 1.0) or 1.0), 1e-9)
+        computing_capacity = max(float(getattr(leo_satellite, 'computing_ability', 1.0) or 1.0), 1e-9)
+        max_hop = max(float(getattr(leo_satellite, 'max_hop', 1.0) or 1.0), 1.0)
+        task_features = np.asarray([
+            float(task_type),
+            float(packet_size) / max_size,
+            float(computing_demand) / computing_capacity,
+            float(size_after_computing) / max_size,
+            float(hops) / max_hop,
+            float(bool(is_computed)),
+        ], dtype=np.float32)
+        distance_before = self._finite_nonnegative(trace.get('distance_before'))
+        distance_after = self._finite_nonnegative(trace.get('distance_after'))
+        progress = np.clip(
+            (distance_before - distance_after) / max(distance_before, 1.0),
+            -1.0,
+            1.0,
+        )
+        meo_features = np.asarray([
+            float(trace.get('action', 0) or 0) / max(float(getattr(self.meo_router, 'max_neighbors', 4)), 1.0),
+            1.0 / (1.0 + distance_before),
+            1.0 / (1.0 + distance_after),
+            progress,
+        ], dtype=np.float32)
+        return JointAction(
+            decision_id=str(trace['decision_id']),
+            current_meo=str(trace['current_domain']),
+            next_meo=str(trace['next_domain']),
+            target_meo=str(trace.get('target_domain') or trace['next_domain']),
+            current_leo=str(getattr(leo_satellite, 'name', '')),
+            target_leo=str(target_leo),
+            action_type=action_type,
+            meo_features=meo_features,
+            task_features=task_features,
+        )
+
+    @staticmethod
+    def _finite_nonnegative(value) -> float:
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return 1e6
+        return value if np.isfinite(value) and value >= 0.0 else 1e6
+
+    def reset_critic_round(self) -> int:
+        """Discard incomplete cross-round credit assignments."""
+        return self.critic.reset_round()
 
     def store_leo_policy_experience(self, *args, **kwargs):
         """把 LEO 实际动作监督样本转发给 MEO router 内的 LEO predictor。"""
@@ -435,6 +645,7 @@ class GlobalTransformerTrainer:
         """保存模型参数、优化器状态、配置和固定拓扑顺序。"""
         if self.meo_router is not None:
             self.meo_router.save()
+        self.critic.save()
         if not self.transformer_enabled:
             return
         if self.model is None or not path:

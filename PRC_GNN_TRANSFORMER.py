@@ -431,7 +431,9 @@ def main():
     transformer_trainer = None
     transformer_model_path = transformer_cfg.get('model_path')
     transformer_loaded = False
-    if transformer_cfg.get('enabled', True) or transformer_cfg.get('meo_exit_enabled', False):
+    if (transformer_cfg.get('enabled', True)
+            or transformer_cfg.get('meo_exit_enabled', False)
+            or transformer_cfg.get('critic', {}).get('enabled', False)):
         transformer_trainer = GlobalTransformerTrainer(transformer_cfg, device)
         print("Creating Global Transformer planner:")
         print(f"  - history_len: {transformer_trainer.history_len}")
@@ -537,6 +539,8 @@ def main():
         print(f"Round {k+1}/{rounds} - {datetime.now().strftime('%H:%M:%S')}")
         print(f"{'='*50}")
         
+        if transformer_trainer is not None:
+            transformer_trainer.reset_critic_round()
         env.reset(begin_time, config['environment']['controlDomainNumber'], config['environment']['MinimuElevationAngle'], config['environment']['ShowLink'],)
         agent.reset_hidden()
         if transformer_trainer is not None:
@@ -608,7 +612,7 @@ def main():
                         transformer_loss, parts = transformer_trainer.update_if_ready()
                         if transformer_loss is not None:
                             round_transformer_losses.append(transformer_loss)
-                    transformer_trainer.update_meo_if_ready()
+                        transformer_trainer.update_meo_if_ready()
 
             if transformer_trainer is not None and transformer_trainer.should_eval():
                 transformer_metrics = transformer_trainer.evaluate_latest()
@@ -658,6 +662,15 @@ def main():
                         if meo_log:
                             env.print_and_save(meo_log)
                             meo_router.reset_training_log()
+                    critic = getattr(transformer_trainer, 'critic', None) if transformer_trainer is not None else None
+                    if critic is not None and getattr(critic, 'enabled', False):
+                        critic_log = critic.format_training_log(
+                            step=t + 1,
+                            total_steps=n_steps,
+                            round_idx=k + 1,
+                        )
+                        if critic_log:
+                            env.print_and_save(critic_log)
         
         # 保存模型
         if phase == 'train' and model_path:
