@@ -250,6 +250,50 @@ def test_meo_segment_reward_uses_segment_delay_instead_of_packet_delay():
     assert np.isclose(reward_fn.segment_reward(trace, current_time=7.0), 0.2)
 
 
+def test_meo_segment_reward_includes_weighted_leo_domain_entry_reward():
+    reward_fn = MEODomainRewardFunction({
+        "segment_success_reward": 0.5,
+        "terminal_reward_weight": 0.25,
+        "domain_hop_penalty": 0.0,
+        "path_hop_penalty": 0.0,
+        "boundary_load_penalty": 0.0,
+    })
+    trace = {
+        "decision_time": 4.0,
+    }
+
+    original_reward = reward_fn.segment_reward(trace, current_time=7.0)
+    weighted_reward = reward_fn.segment_reward(
+        trace,
+        current_time=7.0,
+        leo_reward=-2.0,
+    )
+
+    assert np.isclose(weighted_reward, original_reward + 0.25 * -2.0)
+
+
+def test_meo_segment_reward_ignores_leo_reward_when_weight_is_zero():
+    reward_fn = MEODomainRewardFunction({
+        "segment_success_reward": 0.5,
+        "terminal_reward_weight": 0.0,
+        "domain_hop_penalty": 0.0,
+        "path_hop_penalty": 0.0,
+        "boundary_load_penalty": 0.0,
+    })
+    trace = {
+        "decision_time": 4.0,
+    }
+
+    original_reward = reward_fn.segment_reward(trace, current_time=7.0)
+    reward_with_leo_value = reward_fn.segment_reward(
+        trace,
+        current_time=7.0,
+        leo_reward=100.0,
+    )
+
+    assert np.isclose(reward_with_leo_value, original_reward)
+
+
 def test_meo_segment_potential_reward_prefers_progress_without_congestion():
     reward_fn = MEODomainRewardFunction({
         "segment_success_reward": 0.0,
@@ -1187,6 +1231,46 @@ def test_meo_router_finish_segment_stores_nonterminal_experience_with_next_plan(
     assert np.allclose(stored[5], next_mask)
     assert packet.meo_decision_traces == []
     assert packet.meo_decision_trace is None
+
+
+def test_meo_router_finish_segment_stores_weighted_leo_entry_reward():
+    router = MEODomainRouter({
+        "meo_exit_enabled": True,
+        "use_meo_aggregation": True,
+        "meo_agent": {
+            "epsilon": 0.0,
+            "batch_size": 1,
+            "buffer_size": 10,
+            "reward": {
+                "segment_success_reward": 0.5,
+                "terminal_reward_weight": 0.25,
+                "domain_hop_penalty": 0.0,
+                "path_hop_penalty": 0.0,
+                "boundary_load_penalty": 0.0,
+            },
+        },
+    }, device="cpu", transformer_enabled=False)
+    meo = _meo_satellite()
+    plan = router.recommend_path(meo, "a0", "c0", packet_size=1.0)
+    packet = SimpleNamespace(
+        meo_decision_trace=None,
+        meo_decision_traces=[],
+        meo_segment_time=3.0,
+    )
+
+    router.attach_decision(packet, plan)
+    trace = packet.meo_decision_traces[-1]
+    original_reward = router.reward_function.segment_reward(trace, current_time=3.0)
+    router.finish_segment(
+        packet,
+        next_plan=None,
+        reached_node="b0",
+        leo_reward=-2.0,
+    )
+
+    stored = router.agent.replay_buffer[0]
+    assert np.isclose(stored[2], original_reward + 0.25 * -2.0)
+    assert stored[4] is True
 
 
 def test_meo_router_finish_segment_without_next_plan_is_terminal():

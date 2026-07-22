@@ -139,6 +139,7 @@ class SatelliteEnv(SatelliteSimulation):
 
         self.step_num=0#记录强化学习环境中 step 方法被调用的总次数（即仿真步数）。标识当前仿真进度；日志打印以step_num 作为索引输出当前步数的统计信息（如丢包率、平均延迟等）。
         self.rewards=[]#每个数据包的处理结果（如成功传输、计算完成等）会产生奖励值，这些奖励会被添加到 self.rewards 中。当达到打印周期时，会计算该列表的平均值并打印，然后清空列表（self.rewards = []），为下一个周期的奖励存储做准备。
+        self.domain_entry_rewards=[]#单独累计非终止的跨域入口阶段奖励。
 
         self.current_graph = None
         self.connections = None#存储地面站与卫星之间的通信连接关系。
@@ -333,12 +334,15 @@ class SatelliteEnv(SatelliteSimulation):
         
         self.rewards.extend(self.simulator.propagator.final_rewards)# 收集该步的最终奖励
         self.simulator.propagator.final_rewards = []
+        self.domain_entry_rewards.extend(self.simulator.propagator.domain_entry_rewards)
+        self.simulator.propagator.domain_entry_rewards = []
         self.iteration_counter += 1
         if self.iteration_counter >= self.print_cycle_iterations:
             self.iteration_counter = 0
             self.print_and_save_accumulated_data()
             self.current_print_cycle = 0.0
             self.rewards=[]
+            self.domain_entry_rewards=[]
 
         #更新环境的当前时间（模拟真实时间流逝）
         self.time_acc += self.time_stride
@@ -488,6 +492,13 @@ class SatelliteEnv(SatelliteSimulation):
 
         rewards = sum(self.rewards) / len(self.rewards) if len(self.rewards) > 0 else None
         self.print_and_save(f"Average ending reward: {rewards if rewards is not None else 'None'}")
+        entry_rewards = (
+            sum(self.domain_entry_rewards) / len(self.domain_entry_rewards)
+            if self.domain_entry_rewards else None
+        )
+        self.print_and_save(
+            f"Average domain-entry reward: {entry_rewards if entry_rewards is not None else 'None'}"
+        )
         transformer_losses = getattr(self, 'latest_transformer_losses', None)
         if transformer_losses:
             self.print_and_save(f"transformer_loss: {transformer_losses.get('transformer_loss')}")

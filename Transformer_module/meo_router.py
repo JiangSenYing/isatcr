@@ -102,7 +102,12 @@ class MEODomainRewardFunction:
             outcome_reward = -self.failure_penalty
         return outcome_reward + self.terminal_reward_weight * terminal_reward
 
-    def segment_reward(self, trace: Dict, current_time: Optional[float] = None) -> float:
+    def segment_reward(
+        self,
+        trace: Dict,
+        current_time: Optional[float] = None,
+        leo_reward: float = 0.0,
+    ) -> float:
         """Reward for reaching the next MEO-domain segment boundary."""
         domains = trace.get("domains", []) or []
         domain_hops = max(0, len(domains) - 1)
@@ -127,12 +132,12 @@ class MEODomainRewardFunction:
                 progress_reward = self.gamma * phi_after - phi_before
         return (
             self.segment_success_reward
+            + self.terminal_reward_weight * float(leo_reward)
             + self.progress_reward_weight * progress_reward
             - self.domain_hop_penalty * domain_hops
             - self.path_hop_penalty * path_hops
             - self.boundary_load_penalty * boundary_load
-            - 1.0 * segment_delay
-            # - self.boundary_delay_penalty * segment_delay
+            - self.boundary_delay_penalty * segment_delay
         )
 
     @staticmethod
@@ -239,8 +244,6 @@ class MEODomainRouter:
             if action < 0 or action >= len(neighbors):
                 continue
             next_domain = neighbors[action]
-            if not self._can_reach_target_after_action(graph, next_domain, target_domain):
-                continue
             plan = self._assemble_local_plan(
                 meo_satellite=meo_satellite,
                 graph=graph,
@@ -402,7 +405,7 @@ class MEODomainRouter:
         packet.meo_decision_traces = []
         packet.meo_decision_trace = None
 
-    def finish_segment(self, packet, next_plan=None, reached_node=None):
+    def finish_segment(self, packet, next_plan=None, reached_node=None, leo_reward=0.0):
         """Store an intermediate MEO experience when a planned segment is reached."""
         traces = getattr(packet, "meo_decision_traces", None)
         if not traces:
@@ -420,7 +423,11 @@ class MEODomainRouter:
         trace["segment_reached_node"] = reached_node
         if current_time is not None:
             trace["segment_terminal_time"] = float(current_time)
-        meo_reward = self.reward_function.segment_reward(trace, current_time=current_time)
+        meo_reward = self.reward_function.segment_reward(
+            trace,
+            current_time=current_time,
+            leo_reward=leo_reward,
+        )
         done = next_policy is None
         next_state = None
         next_action_mask = None
@@ -801,15 +808,6 @@ class MEODomainRouter:
         samples = [graph for graph in future_loads_map.get(first_time, []) if isinstance(graph, nx.Graph)]
         return samples or [None]
 
-    def _can_reach_target_after_action(self, graph, next_domain, target_domain):
-        if next_domain == target_domain:
-            return True
-        try:
-            hops = nx.shortest_path_length(graph, next_domain, target_domain)
-        except (nx.NetworkXNoPath, nx.NodeNotFound):
-            return False
-        return int(hops) + 1 <= self.max_domain_hops
-
     def _assemble_local_plan(self, meo_satellite, graph, current_domain, next_domain, target_domain, src, dst, packet_size):  # 根据当前域和策略选择的下一域，组装只包含域级目标的局部计划。
         if current_domain == next_domain or not graph.has_edge(current_domain, next_domain):  # 当前域与下一域相同或两域之间没有边时，无法执行有效的跨域转发。
             return None  # 返回空值，表示本次局部路由计划组装失败。
@@ -867,21 +865,10 @@ class MEODomainRouter:
             exit_node = dst if idx == len(domain_path) - 1 else transitions[idx]["source_boundary"]
             domain_entries[domain] = {"entry": entry, "exit": exit_node}
 
-        satellite_path = []
-        for domain in domain_path:
-            entry_exit = domain_entries[domain]
-            segment = self._intra_domain_path(meo_satellite, graph, domain, entry_exit["entry"], entry_exit["exit"])
-            if segment is None:
-                return None
-            if satellite_path and satellite_path[-1] == segment[0]:
-                satellite_path.extend(segment[1:])
-            else:
-                satellite_path.extend(segment)
         return {
             "domains": list(domain_path),
             "transitions": transitions,
             "domain_entries": domain_entries,
-            "path": satellite_path,
             "source": src,
             "destination": dst,
             "source_domain": domain_path[0],

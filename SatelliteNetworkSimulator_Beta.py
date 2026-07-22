@@ -75,6 +75,11 @@ class Packet():
         self.meo_result = None
         self.meo_terminal_time = None
         self.meo_segment_time = None
+        # LEO hierarchical-RL timing.  A packet starts its first LEO subtask
+        # in the source domain at creation time; successful cross-domain
+        # reception advances this timestamp to the new domain.
+        self.leo_domain_entry_time = creation_time
+        self.leo_previous_domain_entry_time = None
         self.meo_decision_trace = None
         self.meo_decision_traces = []
 

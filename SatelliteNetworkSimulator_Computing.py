@@ -58,6 +58,7 @@ class Propagator_Computing(Propagator):
         self.experiences_2hop = []  # 2跳经验: [state, hop2_info, mark, action, reward, next_state, next_hop2_info, done]
         self.experiences_graph = []  # 图格式经验: [obs_dict, mark, action, reward, next_obs_dict, done]
         self.final_rewards = []  # 存储最终奖励值，用于评估决策效果
+        self.domain_entry_rewards = []  # 存储非终止域入口阶段奖励
         self.n_hops = 1  # 默认1跳模式
         self.obs_type = 'flat'  # 观测类型: 'flat', 'relational', 'graph'
         self.obs_wrapper = None  # 观测包装器实例
@@ -89,6 +90,7 @@ class Propagator_Computing(Propagator):
         self.experiences_2hop = []
         self.experiences_graph = []
         self.final_rewards = []
+        self.domain_entry_rewards = []
     
     def add_experience(self, last_obs, mark, action, reward, current_obs, done,
                        last_task_context=None, current_task_context=None):
@@ -162,6 +164,79 @@ class Propagator_Computing(Propagator):
         """检查是否为分离模式"""
         return self.obs_type in ('relational_separated', 'graph_separated')
 
+    @staticmethod
+    def leo_domain_delay(packet, current_time):
+        """Return elapsed time in the packet's current LEO routing domain."""
+        entry_time = getattr(packet, 'leo_domain_entry_time', None)
+        if entry_time is None:
+            entry_time = packet.creation_time
+        return max(0.0, float(current_time) - float(entry_time))
+
+    @staticmethod
+    def completed_leo_domain_delay(packet, current_time):
+        """Return elapsed time for the LEO domain segment just completed."""
+        end_time = getattr(packet, 'meo_segment_time', None)
+        if end_time is None:
+            end_time = current_time
+        start_time = getattr(packet, 'leo_previous_domain_entry_time', None)
+        if start_time is None:
+            start_time = packet.creation_time
+        return max(0.0, float(end_time) - float(start_time))
+
+    def leo_domain_entry_reward(self, is_computed, segment_delay):
+        """Reward an MEO-directed domain entry using the packet compute state."""
+        if is_computed:
+            return self.reward_function.reach_reward(segment_delay)
+        return self.reward_function.reach_reward_abnormal(segment_delay)
+
+    @staticmethod
+    def leo_domain_entry_done(current_node, destination):
+        """Only a domain entry that is also the final LEO destination terminates."""
+        return int(current_node == destination)
+
+    def record_domain_entry_failure(self, packet, reward, current_node=None):
+        """Include an in-transit failure in domain-entry monitoring.
+
+        Failures after the packet has entered its destination MEO domain belong
+        only to the terminal/ending statistic.  Before that point, the failure
+        is also the outcome of the current cross-domain stage.
+        """
+        destination = getattr(packet, 'destination', None)
+        if current_node is not None and current_node == destination:
+            return False
+
+        current_satellite = self.satellites.get(current_node)
+        destination_satellite = self.satellites.get(destination)
+        current_domain = getattr(current_satellite, 'masterMeo', None)
+        destination_domain = getattr(destination_satellite, 'masterMeo', None)
+        if (
+            current_domain is not None
+            and destination_domain is not None
+            and current_domain == destination_domain
+        ):
+            return False
+
+        self.domain_entry_rewards.append(reward)
+        return True
+
+    def _mark_cross_domain_entry(self, node, next_hop, packet):
+        """Record exact domain entry after a successful cross-domain receive."""
+        source_satellite = self.satellites.get(node)
+        target_satellite = self.satellites.get(next_hop)
+        if source_satellite is None or target_satellite is None:
+            return
+        source_meo = getattr(source_satellite, 'masterMeo', None)
+        target_meo = getattr(target_satellite, 'masterMeo', None)
+        if source_meo is None or target_meo is None or source_meo == target_meo:
+            return
+        previous_entry_time = getattr(packet, 'leo_domain_entry_time', None)
+        if previous_entry_time is None:
+            previous_entry_time = packet.creation_time
+        entry_time = float(self.env.now)
+        packet.leo_previous_domain_entry_time = float(previous_entry_time)
+        packet.leo_domain_entry_time = entry_time
+        packet.meo_segment_time = entry_time
+
     def propagate(self,node,next_hop,packet,toMeo = False):
         """重写父类 propagate 方法，处理带计算任务的数据包在卫星节点间的传播，同时记录强化学习经验和奖励。"""
         # 解包 information
@@ -187,6 +262,7 @@ class Propagator_Computing(Propagator):
                     success = self.satellites[next_hop].push_forward(packet)#尝试将数据包加入下一跳节点的转发队列
                     if success:
                         packet.meo_previous_hop = node
+                        self._mark_cross_domain_entry(node, next_hop, packet)
                         self.logger.log(f"Time {self.env.now:.3f}: {next_hop}: Packet {(packet.source,packet.destination,packet.creation_time)} received by router. Memory remain: {self.satellites[next_hop].current_memory_occupy}.",detail=True)
                     else:
                         source, destination, hops, creation_time, size = packet.source, packet.destination, packet.hops, packet.creation_time, packet.size
@@ -219,7 +295,7 @@ class Propagator_Computing(Propagator):
                         """
                         done = 1
                         # 计算损失奖励（因队列满丢失）
-                        reward = self.reward_function.loss_reward(self.env.now-creation_time)
+                        reward = self.reward_function.loss_reward(self.leo_domain_delay(packet, self.env.now))
                         # 记录强化学习经验（使用简化的 add_experience 方法）
                         # mark 使用 is_computed 标记
                         if last_obs is not None:
@@ -230,6 +306,7 @@ class Propagator_Computing(Propagator):
                             )
                         self.finish_meo_decision(packet, reward, done=True, meo_result="memory_drop")
                         self.final_rewards.append(reward)
+                        self.record_domain_entry_failure(packet, reward, current_node=node)
                         # 若数据包已计算，释放计算资源
                         if packet.computing_node and PRE:
                             self.graph.nodes[packet.computing_node]['computing_remain'] -= computing_demand
@@ -244,7 +321,15 @@ class Propagator_Computing(Propagator):
             #处理下一跳节点无效（不存在于网络中）的情况
                 #下一跳节点不存在时，直接标记数据包丢失，更新对应类型的统计，并释放计算资源（若有）
                 else:
-                    reward = self.reward_function.loss_reward(self.env.now-creation_time)
+                    reward = self.reward_function.loss_reward(self.leo_domain_delay(packet, self.env.now))
+                    self.record_domain_entry_failure(packet, reward, current_node=node)
+                    if last_obs is not None:
+                        self.add_experience(
+                            last_obs, is_computed, last_action,
+                            reward, last_obs, 1,
+                            last_task_context, last_task_context
+                        )
+                        self.final_rewards.append(reward)
                     self.finish_meo_decision(packet, reward, done=True, meo_result="link_drop")
                     # 释放计算资源（若已计算）
                     if packet.computing_node and PRE:
@@ -257,7 +342,15 @@ class Propagator_Computing(Propagator):
             #处理节点间无传播延迟（连接不存在）的情况
             #若 (node, next_hop) 不在 propagation_delays 中，说明两节点无有效连接，数据包丢失，处理逻辑与 “节点无效” 类似。
             else:
-                reward = self.reward_function.loss_reward(self.env.now-packet.creation_time)
+                reward = self.reward_function.loss_reward(self.leo_domain_delay(packet, self.env.now))
+                self.record_domain_entry_failure(packet, reward, current_node=node)
+                if last_obs is not None:
+                    self.add_experience(
+                        last_obs, is_computed, last_action,
+                        reward, last_obs, 1,
+                        last_task_context, last_task_context
+                    )
+                    self.final_rewards.append(reward)
                 self.finish_meo_decision(packet, reward, done=True, meo_result="link_drop")
                 if packet.computing_node and PRE:
                     self.graph.nodes[packet.computing_node]['computing_remain'] -= computing_demand
@@ -311,16 +404,17 @@ class Propagator_Computing(Propagator):
         #处理目标节点有效（存在于卫星网络中）的情况
         if node in self.satellites:
             yield self.env.timeout(self.downstream_delays)
+            domain_delay = self.leo_domain_delay(packet, self.env.now)
             if is_computed:
                 # 数据包已完成计算，使用正常到达奖励
-                reward = self.reward_function.reach_reward(self.env.now-creation_time)
+                reward = self.reward_function.reach_reward(domain_delay)
                 if type==0:
                     self.statics_data['Reached_after_computed_0'] += 1
                 else:
                     self.statics_data['Reached_after_computed_1'] += 1
             else:
                 # 数据包未完成计算却到达目标，使用异常到达奖励
-                reward = self.reward_function.reach_reward_abnormal(self.env.now-creation_time)
+                reward = self.reward_function.reach_reward_abnormal(domain_delay)
             if type == 0:
                 self.statics_data['Reached_0'] += 1
             else:
@@ -340,7 +434,8 @@ class Propagator_Computing(Propagator):
         # 若目标节点 node 无效（不在卫星网络中），数据包被丢弃，奖励为 loss_reward（-loss_factor - delay_factor * 延迟，惩罚丢失和延迟）。
         # 若数据包已在某个节点完成计算（packet.computing_node 存在），则释放该节点的计算资源（computing_remain 减少）。
         else:
-            reward = self.reward_function.loss_reward(self.env.now-creation_time)
+            reward = self.reward_function.loss_reward(self.leo_domain_delay(packet, self.env.now))
+            self.record_domain_entry_failure(packet, reward, current_node=node)
             if packet.computing_node and PRE:
                 self.graph.nodes[packet.computing_node]['computing_remain'] -= computing_demand
             if type == 0:
@@ -821,7 +916,6 @@ class Satellite_with_Computing(Satellite):
             return
         
 
-
     def _build_domain_aggregate_state(self, future_loads_map=None, common_future_edges=None, only_aggregate_self = True):
         """把本 MEO 收齐的域内 LEO 状态聚合成一个域级节点。"""  # 说明该函数会把多个 LEO 的状态汇总为当前 MEO 代表的域状态。
         result = {}
@@ -977,12 +1071,6 @@ class Satellite_with_Computing(Satellite):
                         if future_loads_map.get(key, None) is None:
                             future_loads_map[key] = []
                         future_loads_map[key].extend(value)
-            intra_risks = self._compute_intra_domain_risks(  # 计算域内节点到边界节点等路径相关的风险信息。
-                intra_graph=intra_graph,  # 传入已经构建好的域内 LEO 图。
-                boundary_nodes=boundary_nodes,  # 传入当前域内所有边界节点。
-                boundary_links=boundary_links,  # 传入当前域连接外部域的边界链路列表。
-                future_loads=future_loads_map,  # 传入域内未来预测图。
-            )  # 域内风险计算完成。
             aggregate = {  # 组装当前 MEO 域的聚合状态字典。
                 'domain': self.name,  # 当前聚合状态所属的 MEO 域名称。
                 'timestamp': self.env.now,  # 当前聚合状态生成时的仿真时间。
@@ -991,7 +1079,6 @@ class Satellite_with_Computing(Satellite):
                 'boundary_nodes': boundary_nodes,  # 当前域内连接外部域的边界 LEO 节点列表。
                 'boundary_links': boundary_links,  # 当前域到外部域的所有边界链路明细。
                 'intra_graph': intra_graph,  # 当前域内部的 LEO 网络图。
-                'intra_risks': intra_risks,  # 当前域内部计算出的风险信息。
                 'avg_memory_occupancy_rate': float(np.mean(memory_rates)) if memory_rates else 0.0,  # 当前域内 LEO 的平均存储占用率。
                 'max_memory_occupancy_rate': float(np.max(memory_rates)) if memory_rates else 0.0,  # 当前域内 LEO 的最大存储占用率。
                 'std_memory_occupancy_rate': float(np.std(memory_rates)) if memory_rates else 0.0,  # 当前域内 LEO 存储占用率的标准差。
@@ -1014,7 +1101,6 @@ class Satellite_with_Computing(Satellite):
             aggregate=aggregate,
             members=aggregate['members'],
             boundary_nodes=aggregate['boundary_nodes'],
-            intra_risks=aggregate['intra_risks'],
             avg_memory_occupancy_rate=aggregate['avg_memory_occupancy_rate'],
             max_memory_occupancy_rate=aggregate['max_memory_occupancy_rate'],
             std_memory_occupancy_rate=aggregate['std_memory_occupancy_rate'],
@@ -1057,38 +1143,6 @@ class Satellite_with_Computing(Satellite):
             ]
 
         self.inter_domain_graph = graph
-
-    def _compute_intra_domain_risks(self, intra_graph, boundary_nodes, boundary_links, future_loads):
-        """计算入口、出口分别通往不同相邻域时的域内有向风险度。"""
-        risks = {}
-        boundary_target_domains = {}
-        for boundary_link in boundary_links.values():
-            source_boundary = boundary_link.get('source_boundary')
-            target_domain = boundary_link.get('target_domain')
-            if source_boundary is None or target_domain is None:
-                continue
-            boundary_target_domains.setdefault(source_boundary, set()).add(target_domain)
-
-        for entry in boundary_nodes:
-            if entry not in intra_graph:
-                continue
-            entry_domains = boundary_target_domains.get(entry, set())
-            results = self._path_risk_between_boundaries(
-                intra_graph=intra_graph,
-                source=entry,
-                future_loads=future_loads,
-            )
-            for exit_node in boundary_nodes:
-                if entry == exit_node or exit_node not in results:
-                    continue
-                exit_domains = boundary_target_domains.get(exit_node, set())
-                if entry_domains & exit_domains:
-                    continue
-                info = results[exit_node]
-                risk = info["risk"]
-                if risk is not None:
-                    risks[(entry, exit_node)] = risk
-        return risks
 
     def _path_risk_between_boundaries(self, intra_graph, source, future_loads):
         #计算域内入口和出口之间的路径风险度
@@ -3964,6 +4018,8 @@ class Satellite_with_Computing(Satellite):
             current_task_context = None # 任务上下文（分离模式使用）
             current_task_edge_feats = None # 任务边特征（graph_separated使用
             current_obs = None # 当前观测（所有模式使用）
+            reached_meo_entry = False
+            leo_entry_reward = None
             
             if self.mode in ["Tradition","Ground"]:#传统模式
                 current_state = [source, destination, size, computing_demand, size_after_computing,is_computed]
@@ -3989,6 +4045,17 @@ class Satellite_with_Computing(Satellite):
                 
                 if packet.temporary_destination:
                     if self.name in packet.temporary_destination:
+                        reached_meo_entry = True
+                        segment_end_time = getattr(packet, 'meo_segment_time', None)
+                        if segment_end_time is None:
+                            segment_end_time = self.env.now
+                            packet.meo_segment_time = float(segment_end_time)
+                        segment_delay = self.propagator.completed_leo_domain_delay(
+                            packet, self.env.now
+                        )
+                        leo_entry_reward = self.propagator.leo_domain_entry_reward(
+                            is_computed, segment_delay
+                        )
                         transformer = getattr(self.propagator, 'transformer_module', None)
                         meo_router = getattr(transformer, 'meo_router', None)
                         previous_domain = None
@@ -4032,10 +4099,15 @@ class Satellite_with_Computing(Satellite):
                             if new_temps:
                                 next_meo_plan = plan
                         if meo_router is not None:
-                            packet.meo_segment_time = self.env.now
-                            meo_router.finish_segment(packet, next_plan=next_meo_plan, reached_node=self.name)
+                            meo_router.finish_segment(
+                                packet,
+                                next_plan=next_meo_plan,
+                                reached_node=self.name,
+                                leo_reward=leo_entry_reward,
+                            )
                             if next_meo_plan is not None:
                                 meo_router.attach_decision(packet, next_meo_plan)
+                        packet.leo_previous_domain_entry_time = None
                 # 根据 obs_type 获取当前观测
                 mission_state = [type, size/self.max_size, computing_demand/self.computing_ability, size_after_computing/self.max_size]
                 decision_destinations = list(packet.temporary_destination) if packet.temporary_destination else [destination]
@@ -4326,8 +4398,47 @@ class Satellite_with_Computing(Satellite):
                 
                 """
             
+            if reached_meo_entry and last_obs is not None:
+                last_task_context = info[7] if len(info) > 7 else None
+                leo_entry_done = self.propagator.leo_domain_entry_done(
+                    self.name, destination
+                )
+                self.propagator.add_experience(
+                    last_obs, is_computed, last_action,
+                    leo_entry_reward, current_obs, leo_entry_done,
+                    last_task_context, current_task_context
+                )
+                if leo_entry_done:
+                    self.propagator.final_rewards.append(leo_entry_reward)
+                else:
+                    self.propagator.domain_entry_rewards.append(leo_entry_reward)
+                # The previous action has been settled at the domain boundary.
+                # A following action will overwrite this cleared packet state;
+                # intermediate entries continue bootstrapping from current_obs.
+                last_obs = None
+                cleared_information = [
+                    is_computed, type, computing_demand, size_after_computing,
+                    self.env.now, None, None
+                ]
+                if self.propagator.is_separated_mode():
+                    cleared_information.append(current_task_context)
+                packet.extra_information(cleared_information)
+
             if not self.active:
-                reward = self.reward_function.loss_reward(self.env.now-creation_time)
+                reward = self.reward_function.loss_reward(
+                    self.propagator.leo_domain_delay(packet, self.env.now)
+                )
+                self.propagator.record_domain_entry_failure(
+                    packet, reward, current_node=self.name
+                )
+                if last_obs is not None:
+                    last_task_context = info[7] if len(info) > 7 else None
+                    self.propagator.add_experience(
+                        last_obs, is_computed, last_action,
+                        reward, current_obs, 1,
+                        last_task_context, current_task_context
+                    )
+                    self.propagator.final_rewards.append(reward)
                 self.propagator.finish_meo_decision(packet, reward, done=True, meo_result="link_drop")
                 if packet.computing_node and PRE:
                     self.propagator.graph.nodes[packet.computing_node]['computing_remain'] -= computing_demand
@@ -4480,7 +4591,29 @@ class Satellite_with_Computing(Satellite):
                             self.push_computing(packet,compute_chunk)#并把计算需求传入用于预占
                         else:#非法/放弃行动（next_index其他值）
                             done = 1
-                            reward = self.reward_function.loss_reward(self.env.now-creation_time)
+                            reward = self.reward_function.loss_reward(
+                                self.propagator.leo_domain_delay(packet, self.env.now)
+                            )
+                            self.propagator.record_domain_entry_failure(
+                                packet, reward, current_node=self.name
+                            )
+                            if last_obs is not None:
+                                last_task_context = info[7] if len(info) > 7 else None
+                                previous_reward = self.reward_function.normal_reward(
+                                    self.env.now-last_time,
+                                    1-self.current_memory_occupy/self.memory
+                                )
+                                self.propagator.add_experience(
+                                    last_obs, is_computed, last_action,
+                                    previous_reward, current_obs, 0,
+                                    last_task_context, current_task_context
+                                )
+                                last_obs = None
+                            self.propagator.add_experience(
+                                current_obs, is_computed, action,
+                                reward, current_obs, 1,
+                                current_task_context, current_task_context
+                            )
                             self.propagator.finish_meo_decision(packet, reward, done=True, meo_result="link_drop")
                             self.propagator.final_rewards.append(reward)
                             self.current_memory_occupy-=size
@@ -4505,12 +4638,24 @@ class Satellite_with_Computing(Satellite):
                         else:
                             self.statics_data['Lost_relay_1'] += 1
                         self.logger.log(f"Time {self.env.now:.3f}: {destination} is missed, dropped 1 packet")
-                        reward = self.reward_function.loss_reward(self.env.now-creation_time)
+                        reward = self.reward_function.loss_reward(
+                            self.propagator.leo_domain_delay(packet, self.env.now)
+                        )
+                        self.propagator.record_domain_entry_failure(
+                            packet, reward, current_node=self.name
+                        )
+                        done = 1
+                        self.propagator.final_rewards.append(reward)
                         self.propagator.finish_meo_decision(packet, reward, done=True, meo_result="link_drop")
                 else:#超时（跳数过多）处理 ；如果 hops > 2 * max_hop，认为包超时或循环过久，丢弃并给负奖励，回滚资源并记录统计
                     self.current_memory_occupy -= size
                     done = 1
-                    reward = self.reward_function.loss_reward(self.env.now-creation_time)
+                    reward = self.reward_function.loss_reward(
+                        self.propagator.leo_domain_delay(packet, self.env.now)
+                    )
+                    self.propagator.record_domain_entry_failure(
+                        packet, reward, current_node=self.name
+                    )
                     self.propagator.finish_meo_decision(packet, reward, done=True, meo_result="link_drop")
                     self.propagator.final_rewards.append(reward)
                     if packet.computing_node and PRE:
@@ -4553,7 +4698,19 @@ class Satellite_with_Computing(Satellite):
                 packet.extra_information([is_computed, type, computing_demand, size_after_computing, self.env.now, current_obs, next_index])
             yield self.env.timeout(packet.size / self.transmission_rate)#模拟传输延迟
             if neighbor not in self.neighbors or not self.active:
-                reward = self.reward_function.loss_reward(self.env.now-packet.creation_time)
+                reward = self.reward_function.loss_reward(
+                    self.propagator.leo_domain_delay(packet, self.env.now)
+                )
+                self.propagator.record_domain_entry_failure(
+                    packet, reward, current_node=self.name
+                )
+                if current_obs is not None:
+                    self.propagator.add_experience(
+                        current_obs, is_computed, next_index,
+                        reward, current_obs, 1,
+                        task_context, task_context
+                    )
+                    self.propagator.final_rewards.append(reward)
                 self.propagator.finish_meo_decision(packet, reward, done=True, meo_result="link_drop")
                 if packet.computing_node and PRE:
                     self.propagator.graph.nodes[packet.computing_node]['computing_remain'] -= computing_demand
@@ -4578,7 +4735,19 @@ class Satellite_with_Computing(Satellite):
             packet.extra_information([is_computed,type, computing_demand, size_after_computing, self.env.now, current_state, next_index, hop2_info])
             yield self.env.timeout(packet.size / self.downlink_rate)
             if not self.active:
-                reward = self.reward_function.loss_reward(self.env.now-packet.creation_time)
+                reward = self.reward_function.loss_reward(
+                    self.propagator.leo_domain_delay(packet, self.env.now)
+                )
+                self.propagator.record_domain_entry_failure(
+                    packet, reward, current_node=self.name
+                )
+                if current_state is not None:
+                    self.propagator.add_experience(
+                        current_state, is_computed, next_index,
+                        reward, current_state, 1,
+                        hop2_info, hop2_info
+                    )
+                    self.propagator.final_rewards.append(reward)
                 self.propagator.finish_meo_decision(packet, reward, done=True, meo_result="link_drop")
                 if packet.computing_node and PRE:
                     self.propagator.graph.nodes[packet.computing_node]['computing_remain'] -= computing_demand
@@ -5206,16 +5375,15 @@ class SatelliteNetworkSimulator_OnbardComputing(SatelliteNetworkSimulator):
                 #     )
                 plan = None
                 if src_meo is not None and dest_meo is not None and src_meo != dest_meo:
-                    if dest_meo not in self.satellites[src_meo].neighbors:
-                        plan = self.satellites[self.satellites[satellite].masterMeo].recommend_path(
-                            src=satellite,
-                            dst=destination,
-                            packet_size=size,
-                            task_type=type,
-                            computing_demand=computing_demand,
-                            size_after_computing=size_after_computing,
-                            is_computed=False,
-                        )
+                    plan = self.satellites[self.satellites[satellite].masterMeo].recommend_path(
+                        src=satellite,
+                        dst=destination,
+                        packet_size=size,
+                        task_type=type,
+                        computing_demand=computing_demand,
+                        size_after_computing=size_after_computing,
+                        is_computed=False,
+                    )
                 
                 # 生成数据包并尝试推送至卫星的转发队列
                 if destination in self.satellites[satellite].routing_tables:
