@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import networkx as nx
 import numpy as np
+import pytest
 import torch
 
 from Transformer_module import MEODomainRouter
@@ -9,9 +10,12 @@ from Transformer_module.meo_agent import MEODomainRoutingAgent
 from Transformer_module.meo_router import MEODomainRewardFunction
 from Transformer_module.meo_observation import (
     AGG_FEATURE_DIM,
+    DOMAIN_TOKEN_FEATURE_DIM,
     GLOBAL_FEATURE_DIM,
+    RAW_FEATURE_DIM,
     TASK_GLOBAL_FEATURE_DIM,
     UNREACHABLE_BOUNDARY_DELAY,
+    build_meo_attention_observation,
     build_meo_observation,
     meo_state_dim,
 )
@@ -192,6 +196,55 @@ def test_meo_observation_shapes_and_mask():
         assert neighbors == ["MEO_B", "MEO_D"]
 
 
+def test_meo_attention_observation_collects_configured_hop_context_only():
+    meo = _meo_satellite()
+    graph = meo.inter_domain_graph
+    for domain, member in (("MEO_E", "e0"), ("MEO_F", "f0"), ("MEO_G", "g0")):
+        graph.add_node(
+            domain,
+            aggregate={
+                "members": [member],
+                "boundary_nodes": [member],
+                "intra_graph": _intra_graph(member),
+                "avg_memory_occupancy_rate": 0.2,
+                "std_memory_occupancy_rate": 0.1,
+                "avg_computing_occupancy_rate": 0.4,
+                "std_computing_occupancy_rate": 0.1,
+            },
+        )
+    _add_boundary(graph, "MEO_C", "MEO_E", "c0", "e0", 0.2)
+    _add_boundary(graph, "MEO_E", "MEO_F", "e0", "f0", 0.2)
+
+    expected_counts = {1: 3, 2: 4, 3: 5}
+    for context_hops, expected_count in expected_counts.items():
+        state, mask, neighbors, _ = build_meo_attention_observation(
+            meo,
+            "MEO_F",
+            attention_context_hops=context_hops,
+            use_meo_aggregation=True,
+            src="a0",
+        )
+
+        assert state["domain_features"].shape == (expected_count, DOMAIN_TOKEN_FEATURE_DIM)
+        assert state["domain_hop_matrix"].shape == (expected_count, expected_count)
+        assert neighbors == ["MEO_B", "MEO_D"]
+        assert mask.tolist() == [1.0, 1.0, 0.0, 0.0]
+        assert state["action_domain_indices"].tolist()[:2] == [1, 2]
+        assert state["action_domain_indices"].tolist()[2:] == [-1, -1]
+
+
+def test_meo_attention_observation_rejects_unsupported_context_hops():
+    meo = _meo_satellite()
+    with pytest.raises(ValueError, match="attention_context_hops"):
+        build_meo_attention_observation(
+            meo,
+            "MEO_C",
+            attention_context_hops=4,
+            use_meo_aggregation=True,
+            src="a0",
+        )
+
+
 def test_meo_observation_uses_only_inter_domain_graph_reachable_neighbors():
     meo = _meo_satellite()
     meo.neighbors = ["MEO_B", "MEO_D", "MEO_C", "Satellite_10000_4_5"]
@@ -248,6 +301,54 @@ def test_meo_segment_reward_uses_segment_delay_instead_of_packet_delay():
     }
 
     assert np.isclose(reward_fn.segment_reward(trace, current_time=7.0), 0.2)
+
+
+def test_meo_segment_reward_penalizes_actual_segment_hops_with_empty_plan_path():
+    reward_fn = MEODomainRewardFunction({
+        "segment_success_reward": 0.5,
+        "domain_hop_penalty": 0.0,
+        "path_hop_penalty": 0.2,
+        "boundary_load_penalty": 0.0,
+        "boundary_delay_penalty": 0.0,
+    })
+
+    reward = reward_fn.segment_reward({"path": [], "segment_hops": 3})
+
+    assert np.isclose(reward, -0.1)
+
+
+def test_meo_segment_reward_falls_back_to_legacy_planned_path_hops():
+    reward_fn = MEODomainRewardFunction({
+        "segment_success_reward": 0.5,
+        "domain_hop_penalty": 0.0,
+        "path_hop_penalty": 0.2,
+        "boundary_load_penalty": 0.0,
+        "boundary_delay_penalty": 0.0,
+    })
+
+    reward = reward_fn.segment_reward({"path": ["a0", "a1", "b0", "b1"]})
+
+    assert np.isclose(reward, -0.1)
+
+
+def test_meo_terminal_failure_penalizes_completed_segment_hops():
+    reward_fn = MEODomainRewardFunction({
+        "failure_penalty": 1.0,
+        "score_penalty": 0.0,
+        "domain_hop_penalty": 0.0,
+        "path_hop_penalty": 0.2,
+        "boundary_load_penalty": 0.0,
+        "boundary_delay_penalty": 0.0,
+    })
+    trace = {
+        "meo_result": "link_drop",
+        "path": [],
+        "segment_hops": 2,
+    }
+
+    reward = reward_fn(trace, terminal_reward=-1.0, done=True)
+
+    assert np.isclose(reward, -1.4)
 
 
 def test_meo_segment_reward_includes_weighted_leo_domain_entry_reward():
@@ -368,6 +469,109 @@ def test_meo_observation_includes_task_features_and_domain_compute_pressure():
     assert neighbors[0] == "MEO_B"
     assert np.isclose(state[first_delay_index], 0.3)
     assert np.isclose(state[first_pressure_index], 0.5)
+
+
+def test_meo_observation_includes_unique_target_entry_node_load_statistics():
+    meo = _meo_satellite()
+    graph = meo.inter_domain_graph
+    graph["MEO_A"]["MEO_B"]["boundary_links"] = {
+        ("a0", "b0"): {
+            "source_domain": "MEO_A",
+            "target_domain": "MEO_B",
+            "source_boundary": "a0",
+            "target_boundary": "b0",
+            "target_memory_occupancy_rate": 0.2,
+            "target_computing_occupancy_rate": 0.3,
+            "delay": 0.1,
+        },
+        ("a1", "b0"): {
+            "source_domain": "MEO_A",
+            "target_domain": "MEO_B",
+            "source_boundary": "a1",
+            "target_boundary": "b0",
+            "target_memory_occupancy_rate": 0.6,
+            "target_computing_occupancy_rate": 0.4,
+            "delay": 0.1,
+        },
+        ("a1", "b1"): {
+            "source_domain": "MEO_A",
+            "target_domain": "MEO_B",
+            "source_boundary": "a1",
+            "target_boundary": "b1",
+            "target_memory_occupancy_rate": 0.8,
+            "target_computing_occupancy_rate": 0.9,
+            "delay": 0.1,
+        },
+    }
+    expected = np.asarray([0.6, 0.7, 0.8, 0.4, 0.65, 0.9], dtype=np.float32)
+
+    for use_aggregation, base_feature_dim in ((True, 7), (False, 8)):
+        state, _, neighbors, _ = build_meo_observation(
+            meo,
+            "MEO_C",
+            use_meo_aggregation=use_aggregation,
+            src="a0" if use_aggregation else None,
+        )
+        row_width = (AGG_FEATURE_DIM if use_aggregation else RAW_FEATURE_DIM) + 1
+        first_row = state[GLOBAL_FEATURE_DIM + TASK_GLOBAL_FEATURE_DIM:][0:row_width]
+        assert neighbors[0] == "MEO_B"
+        assert np.allclose(first_row[base_feature_dim:base_feature_dim + 6], expected)
+
+    attention_state, _, _, _ = build_meo_attention_observation(
+        meo,
+        "MEO_C",
+        attention_context_hops=2,
+        use_meo_aggregation=True,
+        src="a0",
+    )
+    assert np.allclose(attention_state["action_features"][0, 7:13], expected)
+
+
+def test_meo_observation_uses_new_target_endpoint_when_boundary_is_reversed():
+    meo = _meo_b_satellite()
+    link = meo.inter_domain_graph["MEO_A"]["MEO_B"]["boundary_links"][("a1", "b0")]
+    link.update({
+        "source_memory_occupancy_rate": 0.25,
+        "source_computing_occupancy_rate": 0.75,
+        "target_memory_occupancy_rate": 0.9,
+        "target_computing_occupancy_rate": 0.1,
+    })
+
+    state, _, neighbors, _ = build_meo_observation(
+        meo,
+        "MEO_D",
+        use_meo_aggregation=True,
+        src="b0",
+    )
+    row_width = AGG_FEATURE_DIM + 1
+    first_row = state[GLOBAL_FEATURE_DIM + TASK_GLOBAL_FEATURE_DIM:][0:row_width]
+
+    assert neighbors[0] == "MEO_A"
+    assert np.allclose(first_row[7:13], [0.25, 0.25, 0.25, 0.75, 0.75, 0.75])
+
+
+def test_meo_observation_entry_load_falls_back_to_intra_graph_then_conservative_default():
+    meo = _meo_satellite()
+    graph = meo.inter_domain_graph
+    target_intra_graph = graph.nodes["MEO_B"]["aggregate"]["intra_graph"]
+    target_intra_graph.nodes["b0"].update({
+        "memory_occupancy_rate": 0.33,
+        "computing_occupancy_rate": 0.44,
+    })
+
+    state, _, _, _ = build_meo_observation(
+        meo, "MEO_C", use_meo_aggregation=True, src="a0"
+    )
+    row_width = AGG_FEATURE_DIM + 1
+    first_row = state[GLOBAL_FEATURE_DIM + TASK_GLOBAL_FEATURE_DIM:][0:row_width]
+    assert np.allclose(first_row[7:13], [0.33, 0.33, 0.33, 0.44, 0.44, 0.44])
+
+    target_intra_graph.nodes["b0"].clear()
+    state, _, _, _ = build_meo_observation(
+        meo, "MEO_C", use_meo_aggregation=True, src="a0"
+    )
+    first_row = state[GLOBAL_FEATURE_DIM + TASK_GLOBAL_FEATURE_DIM:][0:row_width]
+    assert np.allclose(first_row[7:13], np.ones(6, dtype=np.float32))
 
 
 def test_meo_observation_defaults_missing_task_features_to_zero():
@@ -671,11 +875,29 @@ def test_meo_router_returns_local_plan_shape_and_replay_update():
     packet = SimpleNamespace(meo_decision_trace=None, meo_decision_traces=[])
     router.attach_decision(packet, plan)
     assert packet.meo_decision_trace["task_context"]["task_type"] == 1
+    assert packet.meo_decision_trace["segment_hops"] == 0
+    assert packet.meo_decision_trace["executed_path"] == ["a0"]
     router.attach_decision(packet, plan)
     router.finish_decision(packet, reward=1.0, done=True)
     assert len(router.agent.replay_buffer) == 2
     assert router.agent.replay_buffer[0][2] != 1.0
     assert router.update_if_ready() is not None
+
+
+def test_meo_router_records_intra_domain_and_cross_domain_leo_hops():
+    packet = SimpleNamespace(
+        meo_decision_trace={
+            "segment_hops": 0,
+            "executed_path": ["a0"],
+        },
+        meo_decision_traces=[],
+    )
+
+    assert MEODomainRouter.record_leo_hop(packet, "a0", "a1") is True
+    assert MEODomainRouter.record_leo_hop(packet, "a1", "b0") is True
+
+    assert packet.meo_decision_trace["segment_hops"] == 2
+    assert packet.meo_decision_trace["executed_path"] == ["a0", "a1", "b0"]
 
 
 def test_meo_agent_act_without_leo_context_keeps_legacy_return_shape():
@@ -1502,39 +1724,143 @@ def _attention_agent(state_dim, **overrides):
     return MEODomainRoutingAgent(state_dim=state_dim, cfg=cfg, device="cpu")
 
 
+def _attention_state(agent, token_count=3):
+    domain_features = np.linspace(
+        0.05,
+        0.95,
+        token_count * DOMAIN_TOKEN_FEATURE_DIM,
+        dtype=np.float32,
+    ).reshape(token_count, DOMAIN_TOKEN_FEATURE_DIM)
+    hop_matrix = np.abs(
+        np.arange(token_count)[:, None] - np.arange(token_count)[None, :]
+    ).astype(np.int64)
+    action_indices = np.full(agent.n_actions, -1, dtype=np.int64)
+    for idx in range(min(agent.n_actions, token_count - 1)):
+        action_indices[idx] = idx + 1
+    return {
+        "global_context": np.linspace(
+            0.1, 0.9, GLOBAL_FEATURE_DIM + TASK_GLOBAL_FEATURE_DIM, dtype=np.float32
+        ),
+        "domain_features": domain_features,
+        "domain_hop_matrix": hop_matrix,
+        "action_features": np.linspace(
+            0.1,
+            0.8,
+            agent.n_actions * agent.network_config["action_feature_dim"],
+            dtype=np.float32,
+        ).reshape(agent.n_actions, agent.network_config["action_feature_dim"]),
+        "action_domain_indices": action_indices,
+        "current_domain_index": np.asarray(0, dtype=np.int64),
+    }
+
+
 def test_meo_attention_encoder_supports_aggregate_raw_and_zero_states():
     for use_aggregation in (True, False):
         state_dim = meo_state_dim(use_aggregation)
         agent = _attention_agent(state_dim)
-        random_state = torch.randn(3, state_dim)
-        zero_state = torch.zeros(2, state_dim)
+        random_states = [_attention_state(agent, 2), _attention_state(agent, 4)]
+        zero_state = agent.zero_state_like(random_states[0])
 
-        random_q = agent.online_net(random_state)
-        zero_q = agent.online_net(zero_state)
+        random_q = agent.online_net(agent._collate_attention_states(random_states))
+        zero_q = agent.online_net(agent._collate_attention_states([zero_state, zero_state]))
 
-        assert random_q.shape == (3, 4)
+        assert random_q.shape == (2, 4)
         assert zero_q.shape == (2, 4)
         assert torch.isfinite(random_q).all()
         assert torch.isfinite(zero_q).all()
 
 
-def test_meo_attention_encoder_is_neighbor_permutation_equivariant():
+def test_meo_attention_encoder_is_domain_permutation_equivariant():
     state_dim = meo_state_dim(True)
     agent = _attention_agent(state_dim)
     agent.online_net.eval()
-    context_dim = GLOBAL_FEATURE_DIM + TASK_GLOBAL_FEATURE_DIM
-    neighbor_dim = (state_dim - context_dim) // 4
-    context = torch.linspace(0.1, 0.9, context_dim)
-    neighbors = torch.arange(1, 4 * neighbor_dim + 1, dtype=torch.float32).reshape(4, neighbor_dim) / 10.0
-    state = torch.cat([context, neighbors.reshape(-1)]).unsqueeze(0)
-    permutation = torch.tensor([2, 0, 3, 1])
-    permuted_state = torch.cat([context, neighbors[permutation].reshape(-1)]).unsqueeze(0)
+    state = _attention_state(agent, token_count=4)
+    permutation = np.asarray([2, 0, 3, 1])
+    inverse = np.argsort(permutation)
+    permuted_state = dict(state)
+    permuted_state["domain_features"] = state["domain_features"][permutation]
+    permuted_state["domain_hop_matrix"] = state["domain_hop_matrix"][permutation][:, permutation]
+    valid_indices = state["action_domain_indices"] >= 0
+    permuted_indices = state["action_domain_indices"].copy()
+    permuted_indices[valid_indices] = inverse[permuted_indices[valid_indices]]
+    permuted_state["action_domain_indices"] = permuted_indices
+    permuted_state["current_domain_index"] = np.asarray(
+        inverse[int(state["current_domain_index"])], dtype=np.int64
+    )
 
     with torch.no_grad():
-        q_values = agent.online_net(state).squeeze(0)
-        permuted_q_values = agent.online_net(permuted_state).squeeze(0)
+        q_values = agent.online_net(agent._collate_attention_states([state])).squeeze(0)
+        permuted_q_values = agent.online_net(
+            agent._collate_attention_states([permuted_state])
+        ).squeeze(0)
 
-    assert torch.allclose(permuted_q_values, q_values[permutation], atol=1e-6, rtol=1e-6)
+    assert torch.allclose(permuted_q_values, q_values, atol=1e-6, rtol=1e-6)
+
+
+def test_meo_attention_q_values_use_two_hop_domain_features():
+    agent = _attention_agent(meo_state_dim(True), attention_context_hops=2)
+    state = _attention_state(agent, token_count=4)
+    state["action_domain_indices"] = np.asarray([1, 2, -1, -1], dtype=np.int64)
+    state["domain_hop_matrix"] = np.asarray([
+        [0, 1, 1, 2],
+        [1, 0, 2, 1],
+        [1, 2, 0, 3],
+        [2, 1, 3, 0],
+    ], dtype=np.int64)
+    changed = agent._copy_state(state)
+    changed["domain_features"][3] += 5.0
+
+    original_q = agent.q_values(state)
+    changed_q = agent.q_values(changed)
+
+    assert not np.isclose(original_q[0], changed_q[0])
+
+
+def test_meo_attention_shortest_hop_bias_changes_attention_output():
+    agent = _attention_agent(meo_state_dim(True), attention_context_hops=2)
+    state = _attention_state(agent, token_count=3)
+    changed_hops = agent._copy_state(state)
+    changed_hops["domain_hop_matrix"][0, 2] = 4
+    changed_hops["domain_hop_matrix"][2, 0] = 4
+    with torch.no_grad():
+        for layer in agent.online_net.attention:
+            layer.hop_bias.weight.copy_(
+                torch.arange(layer.hop_bias.num_embeddings, dtype=torch.float32)
+                .unsqueeze(1)
+                .expand(-1, layer.num_heads)
+            )
+
+    original_q = agent.q_values(state)
+    changed_q = agent.q_values(changed_hops)
+
+    assert not np.allclose(original_q, changed_q)
+
+
+def test_meo_attention_router_uses_k_hop_context_but_one_hop_actions():
+    router = MEODomainRouter({
+        "meo_exit_enabled": True,
+        "use_meo_aggregation": True,
+        "meo_agent": {
+            "encoder_type": "self_attention",
+            "attention_context_hops": 2,
+            "hidden_dim": 16,
+            "attention_heads": 4,
+            "attention_layers": 1,
+            "attention_ff_dim": 32,
+            "epsilon": 0.0,
+        },
+    }, device="cpu", transformer_enabled=False)
+    meo = _meo_satellite()
+
+    plan = router.recommend_path(meo, "a0", "c0", packet_size=1.0)
+
+    assert plan is not None
+    assert plan["next_domain"] in {"MEO_B", "MEO_D"}
+    assert plan["meo_policy"]["neighbors"] == ["MEO_B", "MEO_D"]
+    state = plan["meo_policy"]["state"]
+    assert isinstance(state, dict)
+    assert state["domain_features"].shape[0] == 4
+    assert state["action_domain_indices"].tolist() == [1, 2, -1, -1]
 
 
 def test_meo_attention_agent_masks_actions_and_updates_with_terminal_zero_state():
@@ -1545,8 +1871,8 @@ def test_meo_attention_agent_masks_actions_and_updates_with_terminal_zero_state(
         buffer_size=10,
         target_update_freq=1,
     )
-    state = np.linspace(0.1, 1.0, state_dim, dtype=np.float32)
-    zero_state = np.zeros(state_dim, dtype=np.float32)
+    state = _attention_state(agent, token_count=4)
+    zero_state = agent.zero_state_like(state)
     action_mask = np.asarray([1.0, 0.0, 1.0, 0.0], dtype=np.float32)
 
     action, _, q_values = agent.act(state, action_mask, explore=False)
@@ -1584,6 +1910,27 @@ def test_meo_q_network_checkpoints_round_trip_and_reject_other_encoder(tmp_path)
         restored_attention.online_net.state_dict().values(),
     ):
         assert torch.equal(original, restored)
+
+    old_dimension_path = tmp_path / "old_dimension_attention_meo.pt"
+    old_dimension_checkpoint = torch.load(attention_path, map_location="cpu")
+    old_dimension_checkpoint["state_dim"] = 41
+    torch.save(old_dimension_checkpoint, old_dimension_path)
+    assert _attention_agent(state_dim).load(str(old_dimension_path)) is False
+
+    legacy_path = tmp_path / "legacy_attention_meo.pt"
+    legacy_checkpoint = torch.load(attention_path, map_location="cpu")
+    legacy_checkpoint["network_config"] = {
+        key: value
+        for key, value in legacy_checkpoint["network_config"].items()
+        if key not in {
+            "attention_context_hops",
+            "domain_feature_dim",
+            "action_feature_dim",
+            "topology_bias_version",
+        }
+    }
+    torch.save(legacy_checkpoint, legacy_path)
+    assert _attention_agent(state_dim).load(str(legacy_path)) is False
 
     mlp = MEODomainRoutingAgent(
         state_dim=state_dim,

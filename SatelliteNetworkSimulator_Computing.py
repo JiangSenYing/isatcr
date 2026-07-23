@@ -18,6 +18,22 @@ import copy
 PRE=True
 CT_FAC=5
 
+
+def _packet_type(packet):
+    try:
+        return int(packet.information[1])
+    except (AttributeError, IndexError, TypeError, ValueError):
+        return None
+
+
+def _record_drop_reason(statics_data, reason, packet=None, packet_type=None):
+    statics_data[f'drop_reason_{reason}'] = statics_data.get(f'drop_reason_{reason}', 0) + 1
+    if packet_type is None:
+        packet_type = _packet_type(packet)
+    if packet_type is not None:
+        key = f'drop_reason_{reason}_{int(packet_type)}'
+        statics_data[key] = statics_data.get(key, 0) + 1
+
 class Reward_Function:
     def __init__(self,reach_factor,delay_factor,loss_factor,memory_threshold,memory_factor):
         self.reach_factor=reach_factor#数据包成功到达目的地时的基础奖励权重。
@@ -261,6 +277,10 @@ class Propagator_Computing(Propagator):
                 if next_hop in self.node_names:
                     success = self.satellites[next_hop].push_forward(packet)#尝试将数据包加入下一跳节点的转发队列
                     if success:
+                        transformer = getattr(self, 'transformer_module', None)
+                        meo_router = getattr(transformer, 'meo_router', None)
+                        if meo_router is not None and hasattr(meo_router, 'record_leo_hop'):
+                            meo_router.record_leo_hop(packet, node, next_hop)
                         packet.meo_previous_hop = node
                         self._mark_cross_domain_entry(node, next_hop, packet)
                         self.logger.log(f"Time {self.env.now:.3f}: {next_hop}: Packet {(packet.source,packet.destination,packet.creation_time)} received by router. Memory remain: {self.satellites[next_hop].current_memory_occupy}.",detail=True)
@@ -316,6 +336,7 @@ class Propagator_Computing(Propagator):
                             self.statics_data['Lost_relay_0'] += 1
                         else:
                             self.statics_data['Lost_relay_1'] += 1
+                        _record_drop_reason(self.statics_data, 'next_hop_queue_full', packet, type)
                 
                         self.logger.log(f"Time {self.env.now:.3f}: {next_hop}: Routing queue is full, discarding packet {(packet.source,packet.destination,packet.creation_time)}.")
             #处理下一跳节点无效（不存在于网络中）的情况
@@ -338,6 +359,7 @@ class Propagator_Computing(Propagator):
                         self.statics_data['Lost_relay_0'] += 1
                     else:
                         self.statics_data['Lost_relay_1'] += 1
+                    _record_drop_reason(self.statics_data, 'next_hop_missing', packet, type)
                     self.logger.log(f"Time {self.env.now:.3f}: {next_hop} is missed, dropped 1 packet.")
             #处理节点间无传播延迟（连接不存在）的情况
             #若 (node, next_hop) 不在 propagation_delays 中，说明两节点无有效连接，数据包丢失，处理逻辑与 “节点无效” 类似。
@@ -358,6 +380,7 @@ class Propagator_Computing(Propagator):
                     self.statics_data['Lost_relay_0'] += 1
                 else:
                     self.statics_data['Lost_relay_1'] += 1
+                _record_drop_reason(self.statics_data, 'link_missing', packet, type)
                 self.logger.log(f"Time {self.env.now:.3f}: connection {(node, next_hop)} is missed, dropped 1 packet")
         else: #该分支是LEO发送给MEO的分支
             distance = self._distance(node, next_hop)
@@ -442,6 +465,7 @@ class Propagator_Computing(Propagator):
                 self.statics_data['Lost_relay_0'] += 1
             else:
                 self.statics_data['Lost_relay_1'] += 1
+            _record_drop_reason(self.statics_data, 'downlink_missing', packet, type)
             self.logger.log(f"Time {self.env.now:.3f}: downlink of {node} is missed, dropped 1 packet")
         meo_result = "reached_computed" if node in self.satellites and is_computed else "reached_uncomputed" if node in self.satellites else "link_drop"
         self.finish_meo_decision(packet, reward, done=True, meo_result=meo_result)
@@ -1780,6 +1804,14 @@ class Satellite_with_Computing(Satellite):
         if len(packet.information) > 1:
             packet_type = int(packet.information[1])
             self.statics_data[f'out_memory_{packet_type}'] = self.statics_data.get(f'out_memory_{packet_type}', 0) + 1
+
+    def record_packet_drop(self, packet, reason):
+        packet_type = _packet_type(packet)
+        if packet_type == 0:
+            self.statics_data['Lost_relay_0'] += 1
+        else:
+            self.statics_data['Lost_relay_1'] += 1
+        _record_drop_reason(self.statics_data, reason, packet, packet_type)
 
     def push_forward(self,packet):
         if self.current_memory_occupy + packet.size < self.memory:
@@ -4007,8 +4039,8 @@ class Satellite_with_Computing(Satellite):
         while self.active:
             packet = yield self.forward_queue.get()
             packet.hops += 1#将包的 hop 计数加 1（表示包经过此节点一次）注意这是在进入节点就计数。
+            packet.intra_hops += 1
             source, destination,hops,creation_time,size = packet.source, packet.destination,packet.hops,packet.creation_time,packet.size#包头信息与状态
-                    
             # 解包 information，使用简化的 7 字段格式
             info = packet.information
             is_computed, type, computing_demand, size_after_computing, last_time, last_obs, last_action = info[:7]
@@ -4045,6 +4077,7 @@ class Satellite_with_Computing(Satellite):
                 
                 if packet.temporary_destination:
                     if self.name in packet.temporary_destination:
+                        packet.intra_hops = 0
                         reached_meo_entry = True
                         segment_end_time = getattr(packet, 'meo_segment_time', None)
                         if segment_end_time is None:
@@ -4446,6 +4479,7 @@ class Satellite_with_Computing(Satellite):
                     self.statics_data['Lost_relay_0'] += 1
                 else:
                     self.statics_data['Lost_relay_1'] += 1
+                _record_drop_reason(self.statics_data, 'current_node_missing', packet, type)
                 self.logger.log(f"Time {self.env.now:.3f}: {self.name} is missed, dropped 1 packet")
                 break
             """
@@ -4626,6 +4660,7 @@ class Satellite_with_Computing(Satellite):
                                 self.statics_data['Lost_relay_0'] += 1
                             else:
                                 self.statics_data['Lost_relay_1'] += 1
+                            _record_drop_reason(self.statics_data, 'illegal_action', packet, type)
                             self.logger.log(f"Time {self.env.now:.3f}: wrong forward decision, dropped 1 packet")
                             """把包当作丢弃,done=1(任务/episode 结束），给负的 loss_reward,追加 propagator.final_rewards,回滚内存和预占计算资源(if PRE),更新统计并记录日志"""
                     else:#如果目的地不在 routing_tables
@@ -4637,6 +4672,7 @@ class Satellite_with_Computing(Satellite):
                             self.statics_data['Lost_relay_0'] += 1
                         else:
                             self.statics_data['Lost_relay_1'] += 1
+                        _record_drop_reason(self.statics_data, 'destination_missing', packet, type)
                         self.logger.log(f"Time {self.env.now:.3f}: {destination} is missed, dropped 1 packet")
                         reward = self.reward_function.loss_reward(
                             self.propagator.leo_domain_delay(packet, self.env.now)
@@ -4664,6 +4700,7 @@ class Satellite_with_Computing(Satellite):
                         self.statics_data['Lost_relay_0'] += 1
                     else:
                         self.statics_data['Lost_relay_1'] += 1
+                    _record_drop_reason(self.statics_data, 'hop_timeout', packet, type)
                     self.logger.log(f"Time {self.env.now:.3f}: transmission out of time, dropped 1 packet")
             else:
                 reward = None
@@ -4718,6 +4755,7 @@ class Satellite_with_Computing(Satellite):
                     self.statics_data['Lost_relay_0'] += 1
                 else:
                     self.statics_data['Lost_relay_1'] += 1
+                _record_drop_reason(self.statics_data, 'transmission_stopped', packet, type)
                 self.logger.log(f"Time {self.env.now:.3f}: transmission stopped, dropped 1 packet")
             else:
                 self.logger.log(f"Time {self.env.now:.3f}: {self.name}: Packet {(packet.source,packet.destination,packet.creation_time)} departed. Memory remain: {(self.memory-self.current_memory_occupy)}",detail=True)
@@ -4755,6 +4793,7 @@ class Satellite_with_Computing(Satellite):
                     self.statics_data['Lost_relay_0'] += 1
                 else:
                     self.statics_data['Lost_relay_1'] += 1
+                _record_drop_reason(self.statics_data, 'offload_stopped', packet, type)
                 self.logger.log(f"Time {self.env.now:.3f}: offload stopped, dropped 1 packet")
                 break
             self.logger.log(f"Time {self.env.now:.3f}: {self.name}: Packet {(packet.source,packet.destination,packet.creation_time)} is offloading. Memory remain: {(self.memory-self.current_memory_occupy)}",detail=True)
@@ -4797,6 +4836,7 @@ class Satellite_with_Computing(Satellite):
                     self.statics_data['Lost_relay_0'] += 1  # 类型 0 任务丢包计数加一。
                 else:  # 非类型 0 的任务按类型 1 统计丢包。
                     self.statics_data['Lost_relay_1'] += 1  # 类型 1 任务丢包计数加一。
+                _record_drop_reason(self.statics_data, 'computing_node_stopped', packet, type)
                 self.logger.log(f"Time {self.env.now:.3f}: transmission stopped, dropped 1 packet")  # 记录因节点失效导致计算后丢包的日志。
                 break  # 退出计算协程循环，停止继续处理计算队列。
             info = packet.information  # 重新读取数据包信息，确保保留可能存在的第 8 个 task_context 字段。
@@ -4932,6 +4972,7 @@ class Satellite_with_Computing(Satellite):
                             self.statics_data['Lost_relay_0'] += 1
                         else:
                             self.statics_data['Lost_relay_1'] += 1
+                        _record_drop_reason(self.statics_data, 'satellite_missing_queue_drain', packet, type)
                     self.logger.log(f"Time {self.env.now:.3f}: {packet} is dropped because of satellite missing.")
                 if neighbor in self.neighbors:
                     self.neighbors.remove(neighbor)
@@ -5129,17 +5170,21 @@ class Satellite_with_Computing(Satellite):
         self.active = False
         while self.computing_queue.items:
             packet=yield self.computing_queue.get()
+            self.record_packet_drop(packet, 'satellite_missing_queue_drain')
             self.logger.log(f"Time {self.env.now:.3f}: {packet} is dropped because of satellite missing.")
         self.current_computing_queue_size = 0
         while self.offload_queue.items:
             packet = yield self.env.process(self.pop_offload())
+            self.record_packet_drop(packet, 'satellite_missing_queue_drain')
             self.logger.log(f"Time {self.env.now:.3f}: {packet} is dropped because of satellite missing.")
         for neighbor in self.neighbors:
             while self.transmission_queue[neighbor].items:
                 packet = yield self.env.process(self.pop_transmission(neighbor))
+                self.record_packet_drop(packet, 'satellite_missing_queue_drain')
                 self.logger.log(f"Time {self.env.now:.3f}: {packet} is dropped because of satellite missing.")
             while self.forward_queue.items:
                 packet = yield self.env.process(self.forward_queue.get())
+                self.record_packet_drop(packet, 'satellite_missing_queue_drain')
                 self.logger.log(f"Time {self.env.now:.3f}: {packet} is dropped because of satellite missing.")
         self.current_memory_occupy=0
         if self.mode in ["Tradition","Ground"]:
@@ -5416,6 +5461,7 @@ class SatelliteNetworkSimulator_OnbardComputing(SatelliteNetworkSimulator):
                         self.logger.log(f"Time {self.env.now:.3f}: {satellite}: Packet {(packet.source, packet.destination,packet.creation_time)} received by router. Memory remain: {self.satellites[satellite].current_memory_occupy}.",detail=True)
                     else:
                         self.statics_datas['Lost_upload'] += 1
+                        _record_drop_reason(self.statics_datas, 'upload_queue_full', packet, type)
                         self.logger.log(f"Time {self.env.now:.3f}: {satellite}: Routing queue is full, discarding packet ({satellite}, {destination},packet.creation_time).")
                     if self.mode in ["Tradition","Ground"]:# 传统模式下更新邻居图
                         neighbors = []

@@ -455,6 +455,8 @@ class SatelliteEnv(SatelliteSimulation):
 
     def print_and_save(self, message):
         print(message)
+        if getattr(self.logger, 'save_log', False):
+            self.logger.logger.info(message)
         if self.save_training_data:
             os.makedirs(self.training_data_dir, exist_ok=True)
             file_path = os.path.join(self.training_data_dir, self.save_training_data)
@@ -480,10 +482,22 @@ class SatelliteEnv(SatelliteSimulation):
         average_computing_waiting_time = (d['Computing_waiting_time']) / (d['Reached_0'] + d['Reached_1']) if d['Reached_0'] + d['Reached_1'] > 0 else None
         out_memory_statics = {k: d[k] for k in sorted(d) if k.startswith('out_memory_')}
         illegal_action_statics = {k: d[k] for k in sorted(d) if k.startswith('illegal_action_')}
+        drop_reason_statics = {
+            k: d[k]
+            for k in sorted(d)
+            if k.startswith('drop_reason_') and not k.rsplit('_', 1)[-1].isdigit()
+        }
+        drop_reason_type_statics = {
+            k: d[k]
+            for k in sorted(d)
+            if k.startswith('drop_reason_') and k.rsplit('_', 1)[-1].isdigit()
+        }
 
         self.print_and_save(f"current_statics: {current_statics}")
         self.print_and_save(f"Out of memory drops: {out_memory_statics}")
         self.print_and_save(f"Illegal action drops: {illegal_action_statics}")
+        self.print_and_save(f"Drop reasons: {drop_reason_statics}")
+        self.print_and_save(f"Drop reasons by packet type: {drop_reason_type_statics}")
         self.print_and_save(f"Packet loss rate: {'{:.2%}'.format(packet_loss_rates) if packet_loss_rates is not None else 'None'}")
         self.print_and_save(f"Average delay for successful transmissions: {'{:.3f} seconds'.format(average_delays) if average_delays is not None else 'None'}")
         self.print_and_save(f"Average hop count for successful transmissions: {'{:.3f} hops'.format(average_hops) if average_hops is not None else 'None'}")

@@ -62,6 +62,7 @@ class Packet():
         self.path_trace = []
         self.computing_waiting_time=0
         self.hops = 0
+        self.intra_hops = 0
         self.size=size
         self.information=[]
         self.routing=None

@@ -306,6 +306,12 @@ def test_meo_segment_reward_adds_weighted_leo_entry_reward():
         path_hop_penalty=0.0,
         boundary_load_penalty=0.0,
         boundary_delay_penalty=0.0,
+        _segment_hops=lambda trace: max(
+            0,
+            int(trace["segment_hops"])
+            if trace.get("segment_hops") is not None
+            else len(trace.get("path", []) or []) - 1,
+        ),
         _boundary_costs=lambda transitions: (0.0, 0.0),
     )
     trace = {"decision_time": 4.0}

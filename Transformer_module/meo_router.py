@@ -6,7 +6,7 @@ import networkx as nx
 import numpy as np
 
 from .meo_agent import MEODomainRoutingAgent
-from .meo_observation import AGG_FEATURE_DIM, GLOBAL_FEATURE_DIM, MAX_MEO_NEIGHBORS, TASK_GLOBAL_FEATURE_DIM, build_meo_observation, meo_state_dim
+from .meo_observation import AGG_FEATURE_DIM, GLOBAL_FEATURE_DIM, MAX_MEO_NEIGHBORS, TASK_GLOBAL_FEATURE_DIM, build_meo_attention_observation, build_meo_observation, meo_state_dim
 
 
 class MEODomainRewardFunction:
@@ -37,6 +37,7 @@ class MEODomainRewardFunction:
         transitions = trace.get("transitions", []) or []  # 读取跨域边界链路明细，用于计算边界负载和延迟惩罚。
 
         domain_hops = max(0, len(domains) - 1)  # 域跳数等于域数量减一，最小为 0，避免空路径得到负数。
+        segment_hops = self._segment_hops(trace)  # 当前域入口到下一域入口实际完成的 LEO 链路跳数。
         score = float(trace.get("score", 0.0) or 0.0)  # 读取 MEO 规划阶段给出的路径风险/代价分数。
         terminal_reward = float(terminal_reward)  # 将外部传入的包级终局 reward 转成浮点数，仅用于判断成败和可选加权。
         outcome_reward = self.terminal_outcome(
@@ -71,6 +72,7 @@ class MEODomainRewardFunction:
             outcome_reward  # 成功/失败/未终止带来的基础 MEO 层结果奖励。
             - self.score_penalty * score  # 惩罚 MEO 规划器评估出的路径风险/代价。
             - self.domain_hop_penalty * domain_hops  # 惩罚跨越过多 MEO 域，鼓励域级路径更短。
+            - self.path_hop_penalty * segment_hops  # 域段失败时也惩罚失败前已完成的实际 LEO 跳数。
             - self.boundary_load_penalty * boundary_load  # 惩罚边界链路平均负载过高，避免拥塞跨域出口。
             - self.boundary_delay_penalty * delay_penalty_value  # 惩罚包从生成到接收/终止的端到端时延。
         )  # reward 计算结束。
@@ -111,7 +113,7 @@ class MEODomainRewardFunction:
         """Reward for reaching the next MEO-domain segment boundary."""
         domains = trace.get("domains", []) or []
         domain_hops = max(0, len(domains) - 1)
-        path_hops = max(0, len(trace.get("path", []) or []) - 1)
+        segment_hops = self._segment_hops(trace)
         boundary_load, boundary_delay = self._boundary_costs(trace.get("transitions", []) or [])
         decision_time = float(trace.get("decision_time", 0.0) or 0.0)
         if current_time is None:
@@ -135,10 +137,21 @@ class MEODomainRewardFunction:
             + self.terminal_reward_weight * float(leo_reward)
             + self.progress_reward_weight * progress_reward
             - self.domain_hop_penalty * domain_hops
-            - self.path_hop_penalty * path_hops
+            - self.path_hop_penalty * segment_hops
             - self.boundary_load_penalty * boundary_load
             - self.boundary_delay_penalty * segment_delay
         )
+
+    @staticmethod
+    def _segment_hops(trace: Dict) -> int:
+        """Return actual hops for one MEO segment, with legacy planned-path fallback."""
+        actual_hops = trace.get("segment_hops")
+        if actual_hops is not None:
+            try:
+                return max(0, int(actual_hops))
+            except (TypeError, ValueError):
+                pass
+        return max(0, len(trace.get("path", []) or []) - 1)
 
     @staticmethod
     def _boundary_costs(transitions) -> Tuple[float, float]:
@@ -165,13 +178,16 @@ class MEODomainRouter:
 
     def __init__(self, cfg: Optional[dict] = None, device: str = "cpu", transformer_enabled: bool = True):
         self.cfg = cfg or {}
-        agent_cfg = self.cfg.get("meo_agent", {}) or {}
+        agent_cfg = dict(self.cfg.get("meo_agent", {}) or {})
         reward_cfg = dict(agent_cfg.get("reward", self.cfg.get("meo_reward", {})) or {})
         reward_cfg.setdefault("gamma", float(agent_cfg.get("gamma", 0.97)))
         self.enabled = bool(self.cfg.get("meo_exit_enabled", False))
         self.transformer_enabled = bool(transformer_enabled)
         self.use_meo_aggregation = bool(self.cfg.get("use_meo_aggregation", True))
         self.max_neighbors = int(agent_cfg.get("max_neighbors", MAX_MEO_NEIGHBORS))
+        agent_cfg.setdefault("n_actions", self.max_neighbors)
+        if int(agent_cfg["n_actions"]) != self.max_neighbors:
+            raise ValueError("MEO n_actions must equal max_neighbors")
         self.max_domain_hops = int(agent_cfg.get("max_domain_hops", self.cfg.get("plan_max_hops", 30)))
         self.update_every = max(1, int(agent_cfg.get("update_every", 1)))
         self.updates_per_step = max(1, int(agent_cfg.get("updates_per_step", 1)))
@@ -226,17 +242,27 @@ class MEODomainRouter:
             "is_computed": is_computed,
         }
         for sample_idx, future_graph in enumerate(future_graphs):
-            state, mask, neighbors, domain_distances = build_meo_observation(
-                meo_satellite=meo_satellite,
-                target_domain=target_domain,
-                use_meo_aggregation=self.use_meo_aggregation,
-                graph=graph,
-                future_graph=future_graph,
-                max_neighbors=self.max_neighbors,
-                task_context=task_context,
-                src=src,
-                excluded_domains=excluded_domains,
+            observation_builder = (
+                build_meo_attention_observation
+                if self.agent.encoder_type == "self_attention"
+                else build_meo_observation
             )
+            observation_kwargs = {
+                "meo_satellite": meo_satellite,
+                "target_domain": target_domain,
+                "use_meo_aggregation": self.use_meo_aggregation,
+                "graph": graph,
+                "future_graph": future_graph,
+                "max_neighbors": self.max_neighbors,
+                "task_context": task_context,
+                "src": src,
+                "excluded_domains": excluded_domains,
+            }
+            if self.agent.encoder_type == "self_attention":
+                observation_kwargs["attention_context_hops"] = self.agent.network_config[
+                    "attention_context_hops"
+                ]
+            state, mask, neighbors, domain_distances = observation_builder(**observation_kwargs)
             # MEO owns only the domain-level target.  The packet-level LEO
             # agent remains responsible for choosing a concrete boundary and
             # the hops used to reach it.
@@ -298,12 +324,14 @@ class MEODomainRouter:
         policy["decision_id"] = decision_id
         trace = {
             "decision_id": decision_id,
-            "state": np.asarray(policy["state"], dtype=np.float32),
+            "state": self.agent._copy_state(policy["state"]),
             "action": int(policy["action"]),
             "action_mask": np.asarray(policy["action_mask"], dtype=np.float32),
             "domains": list(plan.get("domains", [])),
             "transitions": list(plan.get("transitions", [])),
             "path": list(plan.get("path", [])),
+            "segment_hops": 0,
+            "executed_path": [plan.get("source")] if plan.get("source") is not None else [],
             "current_domain": policy.get("current_domain"),
             "next_domain": policy.get("next_domain"),
             "target_domain": policy.get("target_domain"),
@@ -325,6 +353,28 @@ class MEODomainRouter:
             packet.meo_decision_traces = traces
         traces.append(trace)
         packet.meo_decision_trace = trace
+
+    @staticmethod
+    def record_leo_hop(packet, source_node, target_node) -> bool:
+        """Record one successfully completed LEO link in the active MEO segment."""
+        if packet is None or source_node is None or target_node is None:
+            return False
+        trace = getattr(packet, "meo_decision_trace", None)
+        if not isinstance(trace, dict):
+            traces = getattr(packet, "meo_decision_traces", None) or []
+            trace = traces[-1] if traces else None
+        if not isinstance(trace, dict):
+            return False
+
+        trace["segment_hops"] = max(0, int(trace.get("segment_hops", 0) or 0)) + 1
+        executed_path = trace.get("executed_path")
+        if not isinstance(executed_path, list):
+            executed_path = []
+            trace["executed_path"] = executed_path
+        if not executed_path:
+            executed_path.append(source_node)
+        executed_path.append(target_node)
+        return True
 
     def record_executed_boundary(self, packet, meo_satellite, reached_node, previous_node=None) -> bool:
         """Attach the boundary link actually used by the LEO policy to the active MEO trace."""
@@ -432,7 +482,7 @@ class MEODomainRouter:
         next_state = None
         next_action_mask = None
         if next_policy is not None:
-            next_state = np.asarray(next_policy["state"], dtype=np.float32)
+            next_state = self.agent._copy_state(next_policy["state"])
             next_action_mask = np.asarray(next_policy["action_mask"], dtype=np.float32)
         experience = self._store_trace_experience(
             trace,
@@ -450,9 +500,9 @@ class MEODomainRouter:
         packet.meo_decision_trace = traces[-1] if traces else None
 
     def _store_trace_experience(self, trace, reward, done, next_state=None, next_action_mask=None):
-        state = np.asarray(trace.get("state"), dtype=np.float32)
+        state = trace.get("state")
         if next_state is None:
-            next_state = np.zeros_like(state, dtype=np.float32)
+            next_state = self.agent.zero_state_like(state)
         if next_action_mask is None:
             next_action_mask = np.zeros(self.max_neighbors, dtype=np.float32)
         experience = self.agent.store_experience(
@@ -511,7 +561,21 @@ class MEODomainRouter:
 
     @staticmethod
     def _neighbor_compute_balance_from_trace(trace):
-        state = np.asarray(trace.get("state", []), dtype=np.float32).reshape(-1)
+        state = trace.get("state", [])
+        if isinstance(state, dict):
+            neighbor_rows = np.asarray(state.get("action_features", []), dtype=np.float32)
+            if neighbor_rows.ndim != 2 or neighbor_rows.shape[0] == 0:
+                return {}
+            compute_balance = neighbor_rows[:, -1]
+            action_mask = np.asarray(trace.get("action_mask", []), dtype=bool).reshape(-1)
+            neighbors = list(trace.get("neighbors", []) or [])
+            return {
+                str(neighbor): float(compute_balance[idx])
+                for idx, neighbor in enumerate(neighbors)
+                if idx < len(compute_balance)
+                and (not action_mask.size or (idx < action_mask.size and action_mask[idx]))
+            }
+        state = np.asarray(state, dtype=np.float32).reshape(-1)
         neighbor_values = state[GLOBAL_FEATURE_DIM + TASK_GLOBAL_FEATURE_DIM:]
         if neighbor_values.size < AGG_FEATURE_DIM or neighbor_values.size % AGG_FEATURE_DIM != 0:
             return {}

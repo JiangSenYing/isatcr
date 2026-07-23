@@ -4,7 +4,7 @@ from collections import deque
 from collections.abc import Mapping
 import os
 import random
-from typing import Dict, Optional, Sequence, Tuple
+from typing import Dict, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .leo_attention_predictor import LEOAttentionDecisionPredictor, batch_from_networkx
-from .meo_observation import GLOBAL_FEATURE_DIM, TASK_GLOBAL_FEATURE_DIM
+from .meo_observation import DOMAIN_TOKEN_FEATURE_DIM, GLOBAL_FEATURE_DIM, TASK_GLOBAL_FEATURE_DIM
 
 
 class _MLPQNetwork(nn.Module):
@@ -30,8 +30,53 @@ class _MLPQNetwork(nn.Module):
         return self.net(x)
 
 
+class _TopologyAwareEncoderLayer(nn.Module):
+    """Transformer layer with a learned per-head shortest-hop bias."""
+
+    def __init__(self, hidden_dim, num_heads, feedforward_dim, dropout, max_hop_distance):
+        super().__init__()
+        self.num_heads = int(num_heads)
+        self.max_hop_distance = int(max_hop_distance)
+        self.hop_bias = nn.Embedding(self.max_hop_distance + 1, self.num_heads)
+        nn.init.zeros_(self.hop_bias.weight)
+        self.self_attention = nn.MultiheadAttention(
+            hidden_dim,
+            self.num_heads,
+            dropout=dropout,
+            batch_first=True,
+        )
+        self.norm1 = nn.LayerNorm(hidden_dim)
+        self.norm2 = nn.LayerNorm(hidden_dim)
+        self.ffn = nn.Sequential(
+            nn.Linear(hidden_dim, feedforward_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(feedforward_dim, hidden_dim),
+        )
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+
+    def forward(self, tokens, hop_matrix, padding_mask):
+        batch_size, token_count, _ = tokens.shape
+        clipped_hops = hop_matrix.clamp(min=0, max=self.max_hop_distance)
+        bias = self.hop_bias(clipped_hops).permute(0, 3, 1, 2)
+        bias = bias.masked_fill(padding_mask[:, None, None, :], -1e9).reshape(
+            batch_size * self.num_heads, token_count, token_count
+        )
+        attended, _ = self.self_attention(
+            tokens,
+            tokens,
+            tokens,
+            attn_mask=bias,
+            need_weights=False,
+        )
+        tokens = self.norm1(tokens + self.dropout1(attended))
+        tokens = self.norm2(tokens + self.dropout2(self.ffn(tokens)))
+        return tokens.masked_fill(padding_mask.unsqueeze(-1), 0.0)
+
+
 class _NeighborSelfAttentionQNetwork(nn.Module):
-    """Permutation-equivariant Q network over fixed-width neighbor rows."""
+    """Topology-aware Q network over variable-width K-hop domain tokens."""
 
     CONTEXT_DIM = GLOBAL_FEATURE_DIM + TASK_GLOBAL_FEATURE_DIM
 
@@ -44,18 +89,17 @@ class _NeighborSelfAttentionQNetwork(nn.Module):
         num_layers: int,
         feedforward_dim: int,
         dropout: float,
+        context_hops: int,
+        domain_feature_dim: int,
+        action_feature_dim: int,
     ):
         super().__init__()
         if int(n_actions) < 1:
             raise ValueError("MEO n_actions must be at least 1")
         if num_heads < 1:
             raise ValueError("MEO attention_heads must be at least 1")
-        remaining_dim = int(state_dim) - self.CONTEXT_DIM
-        if remaining_dim <= 0 or remaining_dim % int(n_actions) != 0:
-            raise ValueError(
-                "self_attention MEO state_dim must equal 9 context features plus "
-                f"an equal-width row for each of {n_actions} neighbors; got state_dim={state_dim}"
-            )
+        if int(context_hops) not in (1, 2, 3):
+            raise ValueError("MEO attention_context_hops must be one of 1, 2, or 3")
         if hidden_dim % num_heads != 0:
             raise ValueError(
                 f"MEO attention hidden_dim ({hidden_dim}) must be divisible by attention_heads ({num_heads})"
@@ -69,67 +113,77 @@ class _NeighborSelfAttentionQNetwork(nn.Module):
 
         self.state_dim = int(state_dim)
         self.n_actions = int(n_actions)
-        self.neighbor_dim = remaining_dim // self.n_actions
+        self.context_hops = int(context_hops)
+        self.domain_feature_dim = int(domain_feature_dim)
+        self.action_feature_dim = int(action_feature_dim)
         self.context_encoder = nn.Sequential(
             nn.Linear(self.CONTEXT_DIM, hidden_dim),
             nn.ReLU(),
             nn.LayerNorm(hidden_dim),
         )
-        self.neighbor_encoder = nn.Sequential(
-            nn.Linear(self.neighbor_dim + hidden_dim, hidden_dim),
+        self.domain_encoder = nn.Sequential(
+            nn.Linear(self.domain_feature_dim + hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.LayerNorm(hidden_dim),
         )
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_dim,
-            nhead=num_heads,
-            dim_feedforward=feedforward_dim,
-            dropout=dropout,
-            activation="gelu",
-            batch_first=True,
+        self.action_encoder = nn.Sequential(
+            nn.Linear(self.action_feature_dim + hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.LayerNorm(hidden_dim),
         )
-        self.attention = nn.TransformerEncoder(
-            encoder_layer,
-            num_layers=num_layers,
-            enable_nested_tensor=False,
-        )
+        self.attention = nn.ModuleList([
+            _TopologyAwareEncoderLayer(
+                hidden_dim,
+                num_heads,
+                feedforward_dim,
+                dropout,
+                max_hop_distance=self.context_hops * 2,
+            )
+            for _ in range(num_layers)
+        ])
         self.q_head = nn.Sequential(
-            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.Linear(hidden_dim * 4, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1),
         )
 
     def forward(self, x):
-        if x.ndim != 2 or x.shape[1] != self.state_dim:
-            raise ValueError(
-                f"Expected MEO state batch with shape [batch, {self.state_dim}], got {tuple(x.shape)}"
-            )
-        context_features = x[:, : self.CONTEXT_DIM]
-        neighbor_rows = x[:, self.CONTEXT_DIM :].reshape(
-            x.shape[0], self.n_actions, self.neighbor_dim
-        )
-        padding_mask = neighbor_rows.abs().sum(dim=-1).eq(0)
+        if not isinstance(x, Mapping):
+            raise TypeError("self_attention MEO network expects a structured state batch")
+        context_features = x["global_context"]
+        domain_features = x["domain_features"]
+        hop_matrix = x["domain_hop_matrix"]
+        domain_mask = x["domain_mask"].bool()
+        action_features = x["action_features"]
+        action_indices = x["action_domain_indices"].long()
+        current_indices = x["current_domain_index"].long()
 
         context = self.context_encoder(context_features)
-        expanded_context = context.unsqueeze(1).expand(-1, self.n_actions, -1)
-        neighbor_tokens = self.neighbor_encoder(
-            torch.cat([neighbor_rows, expanded_context], dim=-1)
-        )
+        domain_context = context.unsqueeze(1).expand(-1, domain_features.shape[1], -1)
+        domain_tokens = self.domain_encoder(torch.cat([domain_features, domain_context], dim=-1))
+        padding_mask = ~domain_mask
+        for layer in self.attention:
+            domain_tokens = layer(domain_tokens, hop_matrix, padding_mask)
 
-        # PyTorch attention cannot safely consume a row where every token is
-        # padding. Temporarily expose one dummy token, then zero every padded
-        # output. This is important for terminal transitions whose next state
-        # is the all-zero sentinel.
-        safe_padding_mask = padding_mask.clone()
-        all_padding = safe_padding_mask.all(dim=1)
-        if torch.any(all_padding):
-            safe_padding_mask[all_padding, 0] = False
-        attended = self.attention(
-            neighbor_tokens,
-            src_key_padding_mask=safe_padding_mask,
+        hidden_dim = domain_tokens.shape[-1]
+        safe_action_indices = action_indices.clamp(min=0, max=domain_tokens.shape[1] - 1)
+        selected_domains = domain_tokens.gather(
+            1, safe_action_indices.unsqueeze(-1).expand(-1, -1, hidden_dim)
         )
-        attended = attended.masked_fill(padding_mask.unsqueeze(-1), 0.0)
-        q_inputs = torch.cat([attended, expanded_context], dim=-1)
+        selected_domains = selected_domains.masked_fill(
+            action_indices.lt(0).unsqueeze(-1), 0.0
+        )
+        safe_current_indices = current_indices.clamp(min=0, max=domain_tokens.shape[1] - 1)
+        current_domains = domain_tokens.gather(
+            1, safe_current_indices.view(-1, 1, 1).expand(-1, 1, hidden_dim)
+        ).expand(-1, self.n_actions, -1)
+        action_context = context.unsqueeze(1).expand(-1, self.n_actions, -1)
+        encoded_actions = self.action_encoder(
+            torch.cat([action_features, action_context], dim=-1)
+        )
+        q_inputs = torch.cat(
+            [current_domains, selected_domains, encoded_actions, action_context], dim=-1
+        )
         return self.q_head(q_inputs).squeeze(-1)
 
 
@@ -162,11 +216,23 @@ class MEODomainRoutingAgent:
             "hidden_dim": hidden_dim,
         }
         if self.encoder_type == "self_attention":
+            attention_context_hops = int(cfg.get("attention_context_hops", 1))
+            if attention_context_hops not in (1, 2, 3):
+                raise ValueError("MEO attention_context_hops must be one of 1, 2, or 3")
+            remaining_dim = self.state_dim - (GLOBAL_FEATURE_DIM + TASK_GLOBAL_FEATURE_DIM)
+            if remaining_dim <= 0 or remaining_dim % self.n_actions != 0:
+                raise ValueError(
+                    "self_attention MEO state_dim must contain equal-width one-hop action rows"
+                )
             self.network_config.update({
                 "attention_heads": int(cfg.get("attention_heads", 4)),
                 "attention_layers": int(cfg.get("attention_layers", 2)),
                 "attention_ff_dim": int(cfg.get("attention_ff_dim", hidden_dim * 2)),
                 "attention_dropout": float(cfg.get("attention_dropout", 0.0)),
+                "attention_context_hops": attention_context_hops,
+                "domain_feature_dim": int(cfg.get("domain_feature_dim", DOMAIN_TOKEN_FEATURE_DIM)),
+                "action_feature_dim": remaining_dim // self.n_actions,
+                "topology_bias_version": 1,
             })
         self.online_net = self._build_q_network().to(self.device)
         self.target_net = self._build_q_network().to(self.device)
@@ -230,11 +296,14 @@ class MEODomainRoutingAgent:
             num_layers=self.network_config["attention_layers"],
             feedforward_dim=self.network_config["attention_ff_dim"],
             dropout=self.network_config["attention_dropout"],
+            context_hops=self.network_config["attention_context_hops"],
+            domain_feature_dim=self.network_config["domain_feature_dim"],
+            action_feature_dim=self.network_config["action_feature_dim"],
         )
 
     def act(
         self,
-        state: Sequence[float],
+        state: Union[Sequence[float], Mapping],
         action_mask: Optional[Sequence[bool]] = None,
         explore: bool = True,
         leo_context: Optional[Mapping] = None,
@@ -277,8 +346,17 @@ class MEODomainRoutingAgent:
             return False
         return self.leo_loss_window_average < self.leo_loss_gate_threshold
 
-    def q_values(self, state: Sequence[float], action_mask: Optional[Sequence[bool]] = None) -> np.ndarray:
-        state_tensor = torch.as_tensor(np.asarray(state, dtype=np.float32), dtype=torch.float32, device=self.device).view(1, -1)
+    def q_values(
+        self,
+        state: Union[Sequence[float], Mapping],
+        action_mask: Optional[Sequence[bool]] = None,
+    ) -> np.ndarray:
+        if self.encoder_type == "self_attention":
+            state_tensor = self._collate_attention_states([state])
+        else:
+            state_tensor = torch.as_tensor(
+                np.asarray(state, dtype=np.float32), dtype=torch.float32, device=self.device
+            ).view(1, -1)
         was_training = self.online_net.training
         self.online_net.eval()
         with torch.no_grad():
@@ -301,10 +379,10 @@ class MEODomainRoutingAgent:
         # record so delayed packet-level credit can be added after a segment
         # has already entered replay.
         experience = [
-            np.asarray(state, dtype=np.float32),
+            self._copy_state(state),
             int(action),
             float(reward),
-            np.asarray(next_state, dtype=np.float32),
+            self._copy_state(next_state),
             bool(done),
             None if next_action_mask is None else np.asarray(next_action_mask, dtype=np.float32),
         ]
@@ -316,10 +394,14 @@ class MEODomainRoutingAgent:
             return None
         batch = random.sample(self.replay_buffer, self.batch_size)
         states, actions, rewards, next_states, dones, next_masks = zip(*batch)
-        states = torch.as_tensor(np.stack(states), dtype=torch.float32, device=self.device)
+        if self.encoder_type == "self_attention":
+            states = self._collate_attention_states(states)
+            next_states = self._collate_attention_states(next_states)
+        else:
+            states = torch.as_tensor(np.stack(states), dtype=torch.float32, device=self.device)
+            next_states = torch.as_tensor(np.stack(next_states), dtype=torch.float32, device=self.device)
         actions = torch.as_tensor(actions, dtype=torch.long, device=self.device).view(-1, 1)
         rewards = torch.as_tensor(rewards, dtype=torch.float32, device=self.device)
-        next_states = torch.as_tensor(np.stack(next_states), dtype=torch.float32, device=self.device)
         dones = torch.as_tensor(dones, dtype=torch.float32, device=self.device)
 
         q = self.online_net(states).gather(1, actions).squeeze(1)
@@ -350,6 +432,81 @@ class MEODomainRoutingAgent:
             if leo_loss is not None:
                 self.last_leo_loss = float(leo_loss)
         return self.last_loss
+
+    def zero_state_like(self, state):
+        if self.encoder_type != "self_attention":
+            return np.zeros_like(np.asarray(state, dtype=np.float32), dtype=np.float32)
+        action_feature_dim = self.network_config["action_feature_dim"]
+        return {
+            "global_context": np.zeros(GLOBAL_FEATURE_DIM + TASK_GLOBAL_FEATURE_DIM, dtype=np.float32),
+            "domain_features": np.zeros((1, self.network_config["domain_feature_dim"]), dtype=np.float32),
+            "domain_hop_matrix": np.zeros((1, 1), dtype=np.int64),
+            "action_features": np.zeros((self.n_actions, action_feature_dim), dtype=np.float32),
+            "action_domain_indices": np.full(self.n_actions, -1, dtype=np.int64),
+            "current_domain_index": np.asarray(0, dtype=np.int64),
+        }
+
+    def _copy_state(self, state):
+        if self.encoder_type != "self_attention":
+            return np.asarray(state, dtype=np.float32).copy()
+        if not isinstance(state, Mapping):
+            raise TypeError("self_attention MEO replay states must be mappings")
+        return {
+            key: np.asarray(value).copy()
+            for key, value in state.items()
+        }
+
+    def _collate_attention_states(self, states):
+        if not states or not all(isinstance(state, Mapping) for state in states):
+            raise TypeError("self_attention MEO batches require structured state mappings")
+        batch_size = len(states)
+        token_count = max(max(int(np.asarray(state["domain_features"]).shape[0]), 1) for state in states)
+        context_dim = GLOBAL_FEATURE_DIM + TASK_GLOBAL_FEATURE_DIM
+        domain_feature_dim = self.network_config["domain_feature_dim"]
+        action_feature_dim = self.network_config["action_feature_dim"]
+
+        global_context = np.zeros((batch_size, context_dim), dtype=np.float32)
+        domain_features = np.zeros((batch_size, token_count, domain_feature_dim), dtype=np.float32)
+        hop_matrix = np.zeros((batch_size, token_count, token_count), dtype=np.int64)
+        domain_mask = np.zeros((batch_size, token_count), dtype=bool)
+        action_features = np.zeros((batch_size, self.n_actions, action_feature_dim), dtype=np.float32)
+        action_indices = np.full((batch_size, self.n_actions), -1, dtype=np.int64)
+        current_indices = np.zeros(batch_size, dtype=np.int64)
+
+        for row, state in enumerate(states):
+            state_domains = np.asarray(state["domain_features"], dtype=np.float32)
+            count = max(int(state_domains.shape[0]), 1)
+            if state_domains.shape != (count, domain_feature_dim):
+                raise ValueError(
+                    f"Expected domain_features width {domain_feature_dim}, got {state_domains.shape}"
+                )
+            state_hops = np.asarray(state["domain_hop_matrix"], dtype=np.int64)
+            if state_hops.shape != (count, count):
+                raise ValueError(
+                    f"Expected domain_hop_matrix shape {(count, count)}, got {state_hops.shape}"
+                )
+            state_actions = np.asarray(state["action_features"], dtype=np.float32)
+            if state_actions.shape != (self.n_actions, action_feature_dim):
+                raise ValueError(
+                    f"Expected action_features shape {(self.n_actions, action_feature_dim)}, got {state_actions.shape}"
+                )
+            global_context[row] = np.asarray(state["global_context"], dtype=np.float32)
+            domain_features[row, :count] = state_domains
+            hop_matrix[row, :count, :count] = state_hops
+            domain_mask[row, :count] = True
+            action_features[row] = state_actions
+            action_indices[row] = np.asarray(state["action_domain_indices"], dtype=np.int64)
+            current_indices[row] = int(np.asarray(state["current_domain_index"]).item())
+
+        return {
+            "global_context": torch.as_tensor(global_context, device=self.device),
+            "domain_features": torch.as_tensor(domain_features, device=self.device),
+            "domain_hop_matrix": torch.as_tensor(hop_matrix, device=self.device),
+            "domain_mask": torch.as_tensor(domain_mask, device=self.device),
+            "action_features": torch.as_tensor(action_features, device=self.device),
+            "action_domain_indices": torch.as_tensor(action_indices, device=self.device),
+            "current_domain_index": torch.as_tensor(current_indices, device=self.device),
+        }
 
     def store_leo_experience(
         self,
